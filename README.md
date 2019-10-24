@@ -24,6 +24,7 @@ flutter test test/[*].dart
 ```dart
     import 'package:maxilozoz_box/application.dart';
     final Application app = new Application();
+    app.run();
 ```
 
 ### 路由

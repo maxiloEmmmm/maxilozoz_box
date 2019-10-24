@@ -2,7 +2,7 @@ name: maxilozoz_box
 description: flutter framework.
 version: 0.0.1
 author: maxilozoz <2802146520@qq.com>
-homepage: http://baidu.com
+homepage: https://github.com/maxiloEmmmm/maxilozoz_box
 
 environment:
   sdk: ">=2.1.0 <3.0.0"
