@@ -61,7 +61,7 @@ class MinRoute {
 
     this.group.pre = pre;
 
-    if (middlewares != null) {
+    if (middlewares.isNotEmpty) {
       this.group.middlewares = middlewares;
     }
 
@@ -95,7 +95,7 @@ class MinRoute {
 
     RegExp reg = new RegExp('\/((:)*[a-zA-Z_][a-zA-Z_0-9]*)');
     Iterable<Match> matches = reg.allMatches(path);
-    if (matches == null) {
+    if (matches.isEmpty) {
       print('maxilozoz box err: route add path is invaild.');
       return false;
     }

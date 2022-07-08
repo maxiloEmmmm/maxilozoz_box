@@ -1,3 +1,7 @@
+## [0.0.2-beta1] - 22/7/8
+
+* support 修正dio代码
+
 ## [0.0.2-beta0] - 22/7/8
 
 * support null-safe

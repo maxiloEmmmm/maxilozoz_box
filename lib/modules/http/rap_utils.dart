@@ -27,7 +27,7 @@ class RapUtils {
   }
 
   dynamic tryProxy(path, method){
-    Map api = apis.firstWhere((element) {
+    Map? api = apis.firstWhere((element) {
       if(element['reg']) {
         RegExp reg = new RegExp('^'+element['url']+'\$');
         return reg.hasMatch(path);
@@ -36,7 +36,7 @@ class RapUtils {
       }else {
         return false;
       }
-    }, orElse: (){});
+    }, orElse: () => null);
 
     if(api != null){
       if(api['isFunction']) {
