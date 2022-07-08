@@ -8,7 +8,7 @@ class RapUtils {
     String jsonStr = await rootBundle.loadString('lib/rap.json');
     Map<String, dynamic> rapInfo = jsonDecode(jsonStr);
     rapInfo['data']['modules'].forEach((element) {
-      String groupName = element['name'];
+      String? groupName = element['name'];
       element['interfaces'].forEach((api) {
         bool isReg = api['url'].startsWith('reg:');
         apis.add({
@@ -49,7 +49,7 @@ class RapUtils {
     }
   }
 
-  dynamic makeData(List properties, {int parentId = -1}){
+  dynamic makeData(List properties, {int? parentId = -1}){
     Map data = {};
     List propertiesCopy = List.from(properties);
     int len = properties.length;
@@ -60,15 +60,15 @@ class RapUtils {
       if(v['parentId'] == parentId) {
         propertiesCopy.removeAt(i - removeCount);
         removeCount++;
-        String type = v['type'];
-        String rule = v['rule'] == null || v['rule'] == '' ? '0' : v['rule'];
+        String? type = v['type'];
+        String? rule = v['rule'] == null || v['rule'] == '' ? '0' : v['rule'];
         dynamic index = v['name'];
         switch(type) {
           case 'Boolean': {
             data[index] = Random().nextInt(1) > 0;
           }break;
           case 'Number': {
-            if(rule.contains('-')) {
+            if(rule!.contains('-')) {
               List ranges = rule.split('-');
               int min = int.parse(ranges[0]);
               int max = int.parse(ranges[1]);
@@ -85,7 +85,7 @@ class RapUtils {
               'w', 'x', 'y', 'z', '0', '1', '2', '3',
               '4', '5', '6', '7', '8', '9'];
             int nums;
-            if(rule.contains('-')) {
+            if(rule!.contains('-')) {
               List ranges = rule.split('-');
               int min = int.parse(ranges[0]);
               int max = int.parse(ranges[1]);
@@ -100,7 +100,7 @@ class RapUtils {
           }break;
           case 'Array': {
             int nums;
-            if(rule.contains('-')) {
+            if(rule!.contains('-')) {
               List ranges = rule.split('-');
               int min = int.parse(ranges[0]);
               int max = int.parse(ranges[1]);

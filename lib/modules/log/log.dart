@@ -9,7 +9,7 @@ class Log {
     
     int oLen = oldLog.length;
     if(oLen > limit) {
-      oldLog = oldLog.getRange(oLen - limit, oLen);
+      oldLog = oldLog.getRange(oLen - limit, oLen) as List<String>;
     }
 
     prefs.setStringList(key, oldLog);

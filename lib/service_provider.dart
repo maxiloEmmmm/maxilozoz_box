@@ -5,7 +5,7 @@ class ServiceProvider {
 
   Map providers = {};
 
-  Application app;
+  Application? app;
 
   ServiceProvider({this.app});
 

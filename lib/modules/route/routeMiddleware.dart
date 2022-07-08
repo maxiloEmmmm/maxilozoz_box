@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 class RouteMiddleware {
   Map middlewares = {};
 
-  RouteSettings filter(RouteSettings settings, List checkMiddlewares) {
-    RouteMiddlewareFilterItem item = RouteMiddlewareFilterItem(ok: true, settings: settings);
+  RouteSettings? filter(RouteSettings settings, List checkMiddlewares) {
+    RouteMiddlewareFilterItem? item = RouteMiddlewareFilterItem(ok: true, settings: settings);
     checkMiddlewares.any((val) {
       if(!this.middlewares.containsKey(val)) {
         print('[warn] maxilozoz route middleware: $val middleware not exist, nothing to do~');
@@ -13,10 +13,10 @@ class RouteMiddleware {
 
       item = this.middlewares[val].filter(settings);
 
-      return !item.ok;
+      return !item!.ok!;
     });
 
-    return item.settings;
+    return item!.settings;
   }
 
   void add(k, v){
@@ -30,9 +30,9 @@ class RouteMiddleware {
 }
 
 class RouteMiddlewareFilterItem {
-  bool ok;
+  bool? ok;
 
-  RouteSettings settings;
+  RouteSettings? settings;
 
   RouteMiddlewareFilterItem({this.ok, this.settings});
 }

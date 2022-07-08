@@ -3,7 +3,7 @@ import 'package:maxilozoz_box/application.dart';
 class DI {
   Map _binds = {};
 
-  Application app;
+  Application? app;
 
   DI({this.app});
 
@@ -17,22 +17,22 @@ class DI {
 }
 
 class Bind {
-  bool share;
+  bool? share;
 
-  Function(DI app, dynamic params) instance;
+  Function(DI app, dynamic params)? instance;
 
   dynamic _instance;
 
-  String key;
+  String? key;
 
   Bind({this.key, this.instance, this.share});
 
   dynamic make(DI app, dynamic params, {force: false}){
-    if(this.share && this._instance != null && !force) {
+    if(this.share! && this._instance != null && !force) {
       return this._instance;
     }
 
-    this._instance = this.instance(app, params);
+    this._instance = this.instance!(app, params);
     return this._instance;
   }
 }

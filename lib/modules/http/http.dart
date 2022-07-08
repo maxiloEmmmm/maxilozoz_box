@@ -4,18 +4,18 @@ import 'package:flutter/cupertino.dart';
 import 'package:maxilozoz_box/modules/log/log.dart';
 
 class Http extends DioForNative {
-  Http([BaseOptions options]):super(options);
+  Http([BaseOptions? options]):super(options);
 
-  BuildContext context;
+  BuildContext? context;
 
-  Log logEngine;
+  Log? logEngine;
 
   final int httpRewriteCode = 801;
 
   final String httpErrLogKey = '_http_err_log_';
 
   @override
-  Future<Response<T>> get<T>(String path, {Map<String, dynamic> queryParameters, Options options, CancelToken cancelToken, onReceiveProgress}) {
+  Future<Response<T>> get<T>(String path, {Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken, onReceiveProgress}) {
     Future<Response<T>> tmp = super.get(path, queryParameters: queryParameters, options: options, cancelToken: cancelToken, onReceiveProgress: onReceiveProgress);
     tmp.then(this.rewriteHandler)
       .catchError(this.errorHandler);
@@ -23,7 +23,7 @@ class Http extends DioForNative {
   }
 
   @override
-  Future<Response<T>> post<T>(String path, {data, Map<String, dynamic> queryParameters, Options options, CancelToken cancelToken, onSendProgress, onReceiveProgress}) {
+  Future<Response<T>> post<T>(String path, {data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken, onSendProgress, onReceiveProgress}) {
     Future<Response<T>> tmp = super.post(path, data: data, queryParameters: queryParameters, options: options, cancelToken: cancelToken, onSendProgress: onSendProgress, onReceiveProgress: onReceiveProgress);
     tmp.then(this.rewriteHandler)
       .catchError(this.errorHandler);
@@ -36,15 +36,15 @@ class Http extends DioForNative {
         print('[warn] maxilozoz http: rewrite mode without context[BuildContext], please set context to http');
         return;
       }
-      Navigator.pushReplacementNamed(this.context, response.statusMessage);
+      Navigator.pushReplacementNamed(this.context!, response.statusMessage!);
     }
   }
 
   void errorHandler(e) async {
-    logEngine.set(this.httpErrLogKey, e.toString());
+    logEngine!.set(this.httpErrLogKey, e.toString());
   }
 
   Future<List<String>> getErrorLog() async {
-    return logEngine.get(this.httpErrLogKey);
+    return logEngine!.get(this.httpErrLogKey);
   }
 }

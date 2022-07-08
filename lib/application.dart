@@ -10,9 +10,9 @@ import 'package:maxilozoz_box/modules/config/config_provider.dart';
 import 'package:maxilozoz_box/modules/http/http_provider.dart';
 import 'package:maxilozoz_box/modules/log/log_provider.dart';
 class Application {
-  ServiceProvider serviceProvider;
-  DI di;
-  static Application instance;
+  late ServiceProvider serviceProvider;
+  late DI di;
+  static Application? instance;
   String errorLogKey = '_app_err_log_';
 
   Application(){
@@ -75,7 +75,7 @@ class Application {
   void run(){
     runZoned(() {
       ErrorWidget.builder = (FlutterErrorDetails details) {
-        Zone.current.handleUncaughtError(details.exception, details.stack);
+        Zone.current.handleUncaughtError(details.exception, details.stack!);
         return Container(
             color: Colors.transparent
         );
@@ -91,7 +91,7 @@ class Application {
 }
 
 class _App extends StatelessWidget {
-  final Application app;
+  final Application? app;
 
   _App({this.app});
 
@@ -99,7 +99,7 @@ class _App extends StatelessWidget {
   Widget build(BuildContext context) {
     return new MaterialApp(
       initialRoute: '/',
-      onGenerateRoute: this.app.make('route').generate,
+      onGenerateRoute: this.app!.make('route').generate,
       theme: ThemeData(
         primarySwatch: Colors.green,
         backgroundColor: Colors.grey,

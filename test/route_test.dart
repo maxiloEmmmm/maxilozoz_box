@@ -37,7 +37,7 @@ void main() {
     var match = route.match('/q');
     expect(match.middlewares, ['auth'], reason: '路由中间件个数内容不符合');
 
-    RouteSettings settings = route.routeMiddleware.filter(RouteSettings(name: '/q'), match.middlewares);
+    RouteSettings settings = route.routeMiddleware.filter(RouteSettings(name: '/q'), match.middlewares)!;
     expect(settings.name, '/auth/login', reason: '路由中间件未生效');
   });
 }

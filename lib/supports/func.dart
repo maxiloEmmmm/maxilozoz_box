@@ -6,7 +6,7 @@ dynamic appMake({bool force: false, String key: ''}){
     return null;
   }
 
-  return key.isEmpty ? Application.instance : Application.instance.make(key);
+  return key.isEmpty ? Application.instance : Application.instance!.make(key);
 }
 
 dynamic appConfig(dynamic model, {dev: false}){
@@ -15,5 +15,5 @@ dynamic appConfig(dynamic model, {dev: false}){
     return null;
   }
 
-  return Application.instance.config(model, dev: dev);
+  return Application.instance!.config(model, dev: dev);
 }

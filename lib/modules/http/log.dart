@@ -1,19 +1,24 @@
+import 'dart:ffi';
+
 import 'package:dio/dio.dart';
 
 class Log {
-  static InterceptorsWrapper getDioWrapper(){
-    return InterceptorsWrapper(onResponse: (Response response){
-      print("Response: " + response.request.path);
+  static InterceptorsWrapper getDioWrapper() {
+    return InterceptorsWrapper(
+        onResponse: (Response response, ResponseInterceptorHandler handler) {
+      print("Response: " + response.requestOptions.path);
       print("----------------------------------");
       print("|    request: ");
       print("|        query params: ");
-      print("|            " + response.request.queryParameters.toString());
-      if(response.request.method.toLowerCase() == 'post') {
+      print(
+          "|            " + response.requestOptions.queryParameters.toString());
+      if (response.requestOptions.method.toLowerCase() == 'post') {
         print("|        post params: ");
-        print("|            " + response.request.data.toString());
+        print("|            " + response.requestOptions.data.toString());
       }
       print("| status: " + response.statusCode.toString());
       print("| data: " + response.data.toString());
+      handler.next(response);
     });
   }
 }
