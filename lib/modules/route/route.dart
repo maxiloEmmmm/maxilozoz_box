@@ -93,7 +93,7 @@ class MinRoute {
 
     middlewares = middlewares ?? [];
 
-    RegExp reg = new RegExp('\/((:)*[a-zA-Z_][a-zA-Z_0-9]*)');
+    RegExp reg = new RegExp('\/((:)*[a-zA-Z_][a-zA-Z_0-9]*)*');
     Iterable<Match> matches = reg.allMatches(path);
     if (matches.isEmpty) {
       print('maxilozoz box err: route add path is invaild.');
@@ -128,7 +128,7 @@ class MinRoute {
         for (int j = 0; j < mLen; j++) {
           Match match = matches[j];
 
-          if (match.groupCount == 2 && match.group(1)!.startsWith(':')) {
+          if (match.groupCount == 2 &&  match.group(1) != null && match.group(1)!.startsWith(':')) {
             String k = match.group(1)!.substring(1);
             params[k] = paramMatches[0].group(basic++);
           }
