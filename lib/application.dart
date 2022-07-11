@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:maxilozoz_box/modules/storage/sqlite/sqlite_provider.dart';
 import 'package:maxilozoz_box/service_provider.dart';
 import 'package:maxilozoz_box/di.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ class Application {
     this.serviceProvider.register(RouteProvider());
     this.serviceProvider.register(HttpProvider());
     this.serviceProvider.register(LogProvider());
+    this.serviceProvider.register(SqliteProvider());
   }
 
   void register(dynamic provider) {
