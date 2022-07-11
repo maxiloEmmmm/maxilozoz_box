@@ -13,6 +13,7 @@ dependencies:
   flutter_mobx: ^2.0.6+1
   shared_preferences: ^2.0.15
   dio: ^4.0.6
+  sqflite:
 
 dev_dependencies:
   flutter_test:
