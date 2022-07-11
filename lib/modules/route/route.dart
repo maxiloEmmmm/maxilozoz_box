@@ -128,7 +128,9 @@ class MinRoute {
         for (int j = 0; j < mLen; j++) {
           Match match = matches[j];
 
-          if (match.groupCount == 2 && match.group(1)!.startsWith(':')) {
+          if (match.groupCount == 2 &&
+              match.group(1) != null &&
+              match.group(1)!.startsWith(':')) {
             String k = match.group(1)!.substring(1);
             params[k] = paramMatches[0].group(basic++);
           }
