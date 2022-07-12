@@ -28,7 +28,7 @@ class HttpProvider {
       if(app.config('http_use_log') ?? false) {
         http.interceptors.add(HttpLog.Log.getDioWrapper());
       }
-      return Http(options);
+      return http;
     }, share: false);
   }
 
