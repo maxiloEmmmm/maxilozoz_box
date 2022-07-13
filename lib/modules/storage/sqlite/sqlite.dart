@@ -1,4 +1,8 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqflite.dart' as sqliteSDk;
+
+abstract class Database extends sqliteSDk.Database {
+
+}
 
 class sqlite {
   String path = "";
@@ -11,10 +15,10 @@ class sqlite {
     if (instance == null) {
       try {
         var db =
-            await openDatabase(path, version: 1, onCreate: (db, version) async {
+            await sqliteSDk.openDatabase(path, version: 1, onCreate: (db, version) async {
           await db.execute(schema);
         });
-        instance = db;
+        instance = db as Database;
         return db;
       } catch (e) {
         return null;

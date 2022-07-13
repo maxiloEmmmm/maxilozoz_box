@@ -95,6 +95,67 @@ flutter test test/[*].dart
     }, dev: false);
 ```
 
+### Sqlite(建设中)
+> gen code
+
+```dart
+//user.dart
+import "package:maxilozoz_box/modules/storage/sqlite/sqlite.dart";
+import 'package:maxilozoz_box/modules/storage/sqlite/build/db.dart';
+import 'package:focus/pkg/converters/bool_int.dart';
+import 'package:json_annotation/json_annotation.dart';
+part 'user.g.dart';
+part 'user.db.g.dart';
+
+@JsonSerializable(
+  includeIfNull: false,
+  converters: [Bool2Int()]
+)
+@DBAnnotation()
+class User {
+    @DBPKAnnotation()
+    int? id;
+    String? name;
+    int? level;
+    bool? master;
+    int? departmentID
+
+    factory User.fromJson(Map<String, dynamic> json) =>
+      _$UserFromJson(json);
+
+    Map<String, dynamic> toJson() => _$UserToJson(this);
+}
+
+//department.dart
+import "package:maxilozoz_box/modules/storage/sqlite/sqlite.dart";
+import 'package:maxilozoz_box/modules/storage/sqlite/build/db.dart';
+import 'package:focus/pkg/converters/bool_int.dart';
+import 'package:json_annotation/json_annotation.dart';
+part 'department.g.dart';
+part 'department.db.g.dart';
+@JsonSerializable(
+  includeIfNull: false,
+)
+@DBAnnotation()
+class Department {
+    @DBPKAnnotation()
+    int? id;
+    String? name;
+
+    factory Department.fromJson(Map<String, dynamic> json) =>
+      _$DepartmentFromJson(json);
+
+    Map<String, dynamic> toJson() => _$DepartmentToJson(this);
+}
+```
+```shell
+dart run build_runner build
+```
+```dart
+var client = UserClient(db)
+var user = await client.first(1)
+```
+
 ### HTTP
 > 参考 [Dio 3.0.1](https://pub.dev/packages/dio)
 ```dart
