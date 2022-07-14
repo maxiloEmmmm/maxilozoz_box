@@ -4,11 +4,14 @@ import 'package:source_gen/source_gen.dart';
 import 'package:analyzer/dart/element/element.dart' as e;
 import 'package:build/build.dart';
 import 'package:path/path.dart' as Path;
+
 const _coreDBPKChecker = const TypeChecker.fromRuntime(DBPKAnnotation);
 const _coreJSONKeyChecker = const TypeChecker.fromRuntime(JsonKey);
+
 class DBGenerator extends GeneratorForAnnotation<DBAnnotation> {
   @override
-  generateForAnnotatedElement(e.Element element, ConstantReader annotation, BuildStep buildStep) {
+  generateForAnnotatedElement(
+      e.Element element, ConstantReader annotation, BuildStep buildStep) {
     return '''
 part of '${Path.basename(buildStep.inputId.path)}';
 
@@ -55,11 +58,16 @@ class ${element.name}Client {
 
     var hasPK = false;
     var schema = "";
-    for (var e in classElement.fields) {
+    var cfLen = classElement.fields.length - 1;
+    for (var i = 0; i <= cfLen; i++) {
+      var e = classElement.fields[i];
       var dbFieldName = e.name;
       var dbFieldVarName = "${e.name}\Field";
       if (_coreJSONKeyChecker.hasAnnotationOfExact(e)) {
-        dbFieldName = _coreJSONKeyChecker.firstAnnotationOfExact(e)!.getField("name")!.toStringValue()!;
+        dbFieldName = _coreJSONKeyChecker
+            .firstAnnotationOfExact(e)!
+            .getField("name")!
+            .toStringValue()!;
       }
 
       if (!hasPK && _coreDBPKChecker.hasAnnotationOfExact(e)) {
@@ -84,19 +92,19 @@ class ${element.name}Client {
   }
 ''';
       }
-      
+
       fieldStr += '''
   static const $dbFieldVarName = "$dbFieldName";
 ''';
       schema += '''
-  \$$dbFieldVarName ${e.type.isDartCoreString ? "TEXT" : "INTEGER"};
+  \$$dbFieldVarName ${e.type.isDartCoreString ? "TEXT" : "INTEGER"}${i == cfLen ? "" : ","}
   ''';
     }
 
     fieldStr += '''
   static const dbTable = "${classElement.name}";
   static const dbSchema = \'''
-  create table \$dbTable (
+  create table if not exists \$dbTable (
   $schema
   );
   \''';
