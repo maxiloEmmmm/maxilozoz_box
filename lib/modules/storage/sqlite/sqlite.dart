@@ -54,6 +54,8 @@ $schema
           }
 
           await db.delete(migrateTableName, where: "$versionField >= ${m.length}");
+        }else {
+          await db.delete(migrateTableName);
         }
 
         var rows = await db.query(migrateTableName, where: "$statusField = ?", whereArgs: [WaitStatus], orderBy: "$versionField ASC");
