@@ -42,16 +42,28 @@ class ${element.name}Client {
   String _analyseElementForClass(e.ClassElement classElement, ConstantReader annotation) {
     var edgeFunction = "";
     List<String> edgeField = [];
+    List<Map<String, dynamic>> edgeList = [];
     var edgeSchema = "";
     annotation.read("edges").listValue.forEach((field) {
       String relationTable = field.getField("relation")!.toStringValue()!;
       String relationField = field.getField("relationField")!.toStringValue()!;
       String selfField = field.getField("field")!.toStringValue()!;
+      bool unique = field.getField("unique")!.toBoolValue()!;
       var relationDBTable = "${classElement.name}_$relationTable";
-      if(field.getField("unique")!.toBoolValue()!) {
+      edgeList.add({
+        "relationTable": relationTable,
+        "relationDBTable": relationDBTable,
+        "relationField": relationField,
+        "selfField": selfField,
+        "unique": unique,
+      });
+      if(unique) {
         var selfRelationField = "${relationTable}_id";
         edgeField.add(selfRelationField);
         edgeFunction += '''
+Future<int>set$relationTable(int identity, int $relationTable\_identity) async {
+  return await db.rawUpdate("update ${classElement.name} set $selfRelationField = ? where $selfField = ?", [$relationTable\_identity, identity]);
+}
 Future<$relationTable?>get$relationTable(int identity) async {
   var rows = await db.rawQuery("select t1.* from ${classElement.name} as s left join $relationTable as t1 where s.$selfField = ? and t1.$relationField = s.$selfRelationField", [identity]);
   if(rows.isEmpty) {
@@ -60,18 +72,27 @@ Future<$relationTable?>get$relationTable(int identity) async {
 
   return ${relationTable}JSONHelp.fromJson(rows[0]);
 }
-// todo: insert update delete
 ''';
       }else {
               edgeSchema += '''
 create table if not exists $relationDBTable (
-    ${classElement.name}_id INTEGER,
+    ${classElement.name}_id INTEGER PRIMARY KEY,
     ${relationTable}_id INTEGER
   );
 ''';
         edgeFunction += '''
+Future<void>del$relationTable\s(int identity) async {
+  await db.rawDelete("delete from ${classElement.name}_$relationTable where ${classElement.name}_id = ?", [identity]);
+}
+Future<void>set$relationTable\s(int identity, List<int> $relationTable\_identities) async {
+  await del$relationTable\s(identity);
+  var iterator = $relationTable\_identities.iterator;
+  while(iterator.moveNext()) {
+    await db.rawInsert("insert into ${classElement.name}_$relationTable(${classElement.name}_id, $relationTable\_id) values(?, ?)", [identity, iterator.current]);
+  }
+}
 Future<List<$relationTable>>get$relationTable\s(int identity) async {
-  return (await db.rawQuery("select * from $relationTable where $relationField in (select $relationTable\_id from ${classElement.name}_${relationTable + ""} where ${classElement.name}_id=?)", [identity]))
+  return (await db.rawQuery("select * from $relationTable where $relationField in (select $relationTable\_id from ${classElement.name}_$relationTable where ${classElement.name}_id=?)", [identity]))
     .map((e) => $relationTable\JSONHelp.fromJson(e)).toList();
 }  
 ''';
@@ -131,6 +152,11 @@ Future<List<$relationTable>>get$relationTable\s(int identity) async {
 
         fieldStr += '''
   Future<int>delete(${e.type} ${e.name}) async {
+    ${
+      edgeList.map((element) => (element["unique"] as bool) ? "" : '''
+  await del${element["relationTable"]}\s(${e.name}!);
+''').toList().join("\n")
+    }
     return await db.rawDelete("delete from \$dbTable where \$$dbFieldVarName = ?", [${e.name}]);
   }
 
