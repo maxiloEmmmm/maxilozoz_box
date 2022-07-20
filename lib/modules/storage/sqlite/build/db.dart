@@ -43,7 +43,7 @@ class ${element.name}Client {
     var edgeFunction = "";
     List<String> edgeField = [];
     List<Map<String, dynamic>> edgeList = [];
-    var edgeSchema = "";
+    var edgeSchema = [];
     annotation.read("edges").listValue.forEach((field) {
       String relationTable = field.getField("relation")!.toStringValue()!;
       String relationField = field.getField("relationField")!.toStringValue()!;
@@ -74,12 +74,12 @@ Future<$relationTable?>get$relationTable(int identity) async {
 }
 ''';
       }else {
-              edgeSchema += '''
+              edgeSchema.add('''
 create table if not exists $relationDBTable (
     ${classElement.name}_id INTEGER PRIMARY KEY,
     ${relationTable}_id INTEGER
   );
-''';
+''');
         edgeFunction += '''
 Future<void>del$relationTable\s(int identity) async {
   await db.rawDelete("delete from ${classElement.name}_$relationTable where ${classElement.name}_id = ?", [identity]);
@@ -194,9 +194,11 @@ Future<List<$relationTable>>get$relationTable\s(int identity) async {
   create table if not exists \$dbTable (
   $schema
   );
+\''';
 
-  $edgeSchema
-  \''';
+  static const dbEdgeSchemas = [
+    ${edgeSchema.map((e) => "\'''$e\'''").toList().join(",\n")}
+  ];
 ''';
     return fieldStr;
   }
