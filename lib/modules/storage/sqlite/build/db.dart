@@ -74,25 +74,28 @@ Future<$relationTable?>get$relationTable(int identity) async {
 }
 ''';
       }else {
-              edgeSchema.add('''
+              edgeSchema.addAll(['''
 create table if not exists $relationDBTable (
-    ${classElement.name}_id INTEGER PRIMARY KEY,
+    ${classElement.name}_id INTEGER,
     ${relationTable}_id INTEGER
   );
-''');
+''', '''
+CREATE INDEX ${classElement.name}_index
+ON $relationDBTable (${classElement.name}_id);
+''']);
         edgeFunction += '''
 Future<void>del$relationTable\s(int identity) async {
-  await db.rawDelete("delete from ${classElement.name}_$relationTable where ${classElement.name}_id = ?", [identity]);
+  await db.rawDelete("delete from $relationDBTable where ${classElement.name}_id = ?", [identity]);
 }
 Future<void>set$relationTable\s(int identity, List<int> $relationTable\_identities) async {
   await del$relationTable\s(identity);
   var iterator = $relationTable\_identities.iterator;
   while(iterator.moveNext()) {
-    await db.rawInsert("insert into ${classElement.name}_$relationTable(${classElement.name}_id, $relationTable\_id) values(?, ?)", [identity, iterator.current]);
+    await db.rawInsert("insert into $relationDBTable(${classElement.name}_id, $relationTable\_id) values(?, ?)", [identity, iterator.current]);
   }
 }
 Future<List<$relationTable>>get$relationTable\s(int identity) async {
-  return (await db.rawQuery("select * from $relationTable where $relationField in (select $relationTable\_id from ${classElement.name}_$relationTable where ${classElement.name}_id=?)", [identity]))
+  return (await db.rawQuery("select * from $relationTable where $relationField in (select $relationTable\_id from $relationDBTable where ${classElement.name}_id=?)", [identity]))
     .map((e) => $relationTable\JSONHelp.fromJson(e)).toList();
 }  
 ''';
