@@ -39,7 +39,8 @@ class ${element.name}Client {
     }
   }
 
-  String _analyseElementForClass(e.ClassElement classElement, ConstantReader annotation) {
+  String _analyseElementForClass(
+      e.ClassElement classElement, ConstantReader annotation) {
     var edgeFunction = "";
     List<String> edgeField = [];
     List<Map<String, dynamic>> edgeList = [];
@@ -49,6 +50,7 @@ class ${element.name}Client {
       String relationField = field.getField("relationField")!.toStringValue()!;
       String selfField = field.getField("field")!.toStringValue()!;
       bool unique = field.getField("unique")!.toBoolValue()!;
+      bool belong = field.getField("belong")!.toBoolValue()!;
       var relationDBTable = "${classElement.name}_$relationTable";
       edgeList.add({
         "relationTable": relationTable,
@@ -56,11 +58,32 @@ class ${element.name}Client {
         "relationField": relationField,
         "selfField": selfField,
         "unique": unique,
+        "belong": belong,
       });
-      if(unique) {
-        var selfRelationField = "${relationTable}_id";
-        edgeField.add(selfRelationField);
-        edgeFunction += '''
+      if (belong) {
+        if (unique) {
+          edgeFunction += '''
+Future<List<$relationTable>?>get$relationTable(int identity) async {
+  var rows = await db.rawQuery("select * from $relationTable where ${classElement.name}_id = ? limit 1", [identity])
+  if(rows.isEmpty) {
+    return null;
+  }
+  return $relationTable\JSONHelp.fromJson(rows[0]);
+}
+''';
+        } else {
+          edgeFunction += '''
+Future<List<$relationTable>?>get$relationTable\s(int identity) async {
+  return (await db.rawQuery("select * from $relationTable where ${classElement.name}_id = ?", [identity]))
+    .map((e) => $relationTable\JSONHelp.fromJson(e)).toList();
+}
+''';
+        }
+      } else {
+        if (unique) {
+          var selfRelationField = "${relationTable}_id";
+          edgeField.add(selfRelationField);
+          edgeFunction += '''
 Future<int>set$relationTable(int identity, int $relationTable\_identity) async {
   return await db.rawUpdate("update ${classElement.name} set $selfRelationField = ? where $selfField = ?", [$relationTable\_identity, identity]);
 }
@@ -73,17 +96,20 @@ Future<$relationTable?>get$relationTable(int identity) async {
   return ${relationTable}JSONHelp.fromJson(rows[0]);
 }
 ''';
-      }else {
-              edgeSchema.addAll(['''
+        } else {
+          edgeSchema.addAll([
+            '''
 create table if not exists $relationDBTable (
     ${classElement.name}_id INTEGER,
     ${relationTable}_id INTEGER
   );
-''', '''
+''',
+            '''
 CREATE INDEX ${classElement.name}_index
 ON $relationDBTable (${classElement.name}_id);
-''']);
-        edgeFunction += '''
+'''
+          ]);
+          edgeFunction += '''
 Future<void>del$relationTable\s(int identity) async {
   await db.rawDelete("delete from $relationDBTable where ${classElement.name}_id = ?", [identity]);
 }
@@ -99,6 +125,7 @@ Future<List<$relationTable>>get$relationTable\s(int identity) async {
     .map((e) => $relationTable\JSONHelp.fromJson(e)).toList();
 }  
 ''';
+        }
       }
     });
 
@@ -148,18 +175,17 @@ Future<List<$relationTable>>get$relationTable\s(int identity) async {
 
         bool? autoInsertValue = _coreDBPKChecker
             .firstAnnotationOfExact(e)!
-            .getField("AutoInsert")?.toBoolValue();
-        if(autoInsertValue != null && autoInsertValue) {
+            .getField("AutoInsert")
+            ?.toBoolValue();
+        if (autoInsertValue != null && autoInsertValue) {
           autoInsert = true;
         }
 
         fieldStr += '''
   Future<int>delete(${e.type} ${e.name}) async {
-    ${
-      edgeList.map((element) => (element["unique"] as bool) ? "" : '''
+    ${edgeList.map((element) => (element["unique"] as bool) || (element["belong"] as bool) ? "" : '''
   await del${element["relationTable"]}\s(${e.name}!);
-''').toList().join("\n")
-    }
+''').toList().join("\n")}
     return await db.rawDelete("delete from \$dbTable where \$$dbFieldVarName = ?", [${e.name}]);
   }
 
@@ -183,8 +209,8 @@ Future<List<$relationTable>>get$relationTable\s(int identity) async {
   static const $dbFieldVarName = "$dbFieldName";
 ''';
       var schemaPlus = "";
-      if(isPk) {
-        schemaPlus = " PRIMARY KEY ${autoInsert ? "AUTOINCREMENT" : ""}"; 
+      if (isPk) {
+        schemaPlus = " PRIMARY KEY ${autoInsert ? "AUTOINCREMENT" : ""}";
       }
       schema += '''
   \$$dbFieldVarName ${e.type.isDartCoreString ? "TEXT" : "INTEGER"}$schemaPlus${i == cfLen ? "" : ","}
@@ -197,11 +223,8 @@ Future<List<$relationTable>>get$relationTable\s(int identity) async {
   create table if not exists \$dbTable (
   $schema
   );
+  ${edgeSchema.join("\n")}
 \''';
-
-  static const dbEdgeSchemas = [
-    ${edgeSchema.map((e) => "\'''$e\'''").toList().join(",\n")}
-  ];
 ''';
     return fieldStr;
   }

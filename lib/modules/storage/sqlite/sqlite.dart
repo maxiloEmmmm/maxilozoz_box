@@ -28,42 +28,52 @@ create table $migrateTableName(
   Future<Database?> DB() async {
     if (instance == null) {
       try {
-        var db = await sqliteSDk.openDatabase(path, version: 1, onCreate: (db, version) async {
-          await db.execute('''
-$migrateTableSchema
-$schema
-''');
+        var db = await sqliteSDk.openDatabase(path, version: 1,
+            onCreate: (db, version) async {
+          for (var val in schema.split(";")..add(migrateTableSchema)) {
+            if (val.trim().isNotEmpty) {
+              await db.execute(val);
+            }
+          }
         });
 
         if (migrate != null && migrate is List<String>) {
           List<String> m = migrate as List<String>;
           for (var i = 0; i < m.length; i++) {
-            var rows = await db.query(migrateTableName, where: "$versionField = ?", whereArgs: [i]);
+            var rows = await db.query(migrateTableName,
+                where: "$versionField = ?", whereArgs: [i]);
             // sql的改动应以追加sql 不应替换原有
             // 所以不对比相同version sql的变化
-            if(rows.isEmpty) {
+            if (rows.isEmpty) {
               await db.insert(migrateTableName, {
                 "$versionField": i,
                 "$sqlField": m[i],
                 "$statusField": WaitStatus,
               });
-            }else if(rows[0][sqlField] != m[i]) {
+            } else if (rows[0][sqlField] != m[i]) {
               print("warn: sql change ${rows[0][sqlField]} => ${m[i]}");
-              await db.update(migrateTableName, {sqlField: m[i]}, where: "$versionField = ?", whereArgs: [i]);
+              await db.update(migrateTableName, {sqlField: m[i]},
+                  where: "$versionField = ?", whereArgs: [i]);
             }
           }
 
-          await db.delete(migrateTableName, where: "$versionField >= ${m.length}");
-        }else {
+          await db.delete(migrateTableName,
+              where: "$versionField >= ${m.length}");
+        } else {
           await db.delete(migrateTableName);
         }
 
-        var rows = await db.query(migrateTableName, where: "$statusField = ?", whereArgs: [WaitStatus], orderBy: "$versionField ASC");
+        var rows = await db.query(migrateTableName,
+            where: "$statusField = ?",
+            whereArgs: [WaitStatus],
+            orderBy: "$versionField ASC");
         for (var i = 0; i < rows.length; i++) {
           await db.execute(rows[i][sqlField]! as String);
           await db.update(
               migrateTableName,
-              {statusField: CompleteStatus,},
+              {
+                statusField: CompleteStatus,
+              },
               where: "$versionField = ? and $statusField = ?",
               whereArgs: [CompleteStatus, WaitStatus]);
         }
