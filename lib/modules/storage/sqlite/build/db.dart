@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:json_annotation/json_annotation.dart';
 import 'package:maxilozoz_box/modules/storage/sqlite/build/annotation.dart';
 import 'package:source_gen/source_gen.dart';
+import 'package:source_gen/src/output_helpers.dart';
 import 'package:analyzer/dart/element/element.dart' as e;
 import 'package:build/build.dart';
 import 'package:path/path.dart' as Path;
@@ -8,224 +11,339 @@ import 'package:path/path.dart' as Path;
 const _coreDBPKChecker = const TypeChecker.fromRuntime(DBPKAnnotation);
 const _coreJSONKeyChecker = const TypeChecker.fromRuntime(JsonKey);
 
-class DBGenerator extends GeneratorForAnnotation<DBAnnotation> {
-  @override
-  generateForAnnotatedElement(
-      e.Element element, ConstantReader annotation, BuildStep buildStep) {
-    return '''
-part of '${Path.basename(buildStep.inputId.path)}';
+class parseTable {
+  List<DBMetaField> fields = [];
+  List<DBMetaEdge> edges = [];
+  List<DBMetaIndex> indexs = [];
+  String table = "";
 
-class ${element.name}JSONHelp {
-  static ${element.name} fromJson(Map<String, dynamic> json) => _\$${element.name}FromJson(json);
-  static Map<String, dynamic> toJson(${element.name} obj) => _\$${element.name}ToJson(obj);
+  Map<String, DBMetaEdge> get edgeMap {
+    Map<String, DBMetaEdge> ret = {};
+    edges.forEach((element) {
+      ret[element.table] = element;
+    });
+    return ret;
+  }
 }
 
-class ${element.name}Client {
-  Database db;
-  ${element.name}Client(this.db);
+class parse {
+  List<parseTable> tables = [];
 
-  ${analyseElement(element, annotation)}
-}
-''';
+  Map<String, parseTable> tableMap() {
+    Map<String, parseTable> ret = {};
+    tables.forEach((element) {
+      ret[element.table] = element;
+    });
+    return ret;
   }
 
-  String analyseElement(e.Element element, ConstantReader annotation) {
-    switch (element.kind) {
-      case e.ElementKind.CLASS:
-        return _analyseElementForClass(element as e.ClassElement, annotation);
-      case e.ElementKind.FUNCTION:
-      default:
-        return "";
+  parseTable? table(String name) {
+    return tableMap()[name];
+  }
+}
+
+class DBGenerator extends Generator {
+  TypeChecker get typeChecker => TypeChecker.fromRuntime(DBSchema);
+  var pp = parse();
+
+  List<DBMetaField> doParseField(ConstantReader ann) {
+    var iterator = ann.read("fields").listValue.iterator;
+
+    List<DBMetaField> rets = [
+      DBMetaField(
+        name: IDField,
+        pk: true,
+        autoIncrement: true,
+        type: DBFieldType.Int,
+      )
+    ];
+    while (iterator.moveNext()) {
+      String name = iterator.current.getField("name")!.toStringValue()!;
+      if (name.compareTo(IDField) == 0) {
+        print("not support custom id field");
+        continue;
+      }
+      rets.add(DBMetaField(
+        name: name,
+        type: DBFieldType.values[iterator.current
+            .getField("type")!
+            .getField("index")!
+            .toIntValue()!],
+      ));
     }
+
+    return rets;
   }
 
-  String _analyseElementForClass(
-      e.ClassElement classElement, ConstantReader annotation) {
-    var edgeFunction = "";
-    List<String> edgeField = [];
-    List<Map<String, dynamic>> edgeList = [];
-    var edgeSchema = [];
-    annotation.read("edges").listValue.forEach((field) {
-      String relationTable = field.getField("relation")!.toStringValue()!;
-      String relationField = field.getField("relationField")!.toStringValue()!;
-      String selfField = field.getField("field")!.toStringValue()!;
-      bool unique = field.getField("unique")!.toBoolValue()!;
-      bool belong = field.getField("belong")!.toBoolValue()!;
-      var relationDBTable = "${classElement.name}_$relationTable";
-      edgeList.add({
-        "relationTable": relationTable,
-        "relationDBTable": relationDBTable,
-        "relationField": relationField,
-        "selfField": selfField,
-        "unique": unique,
-        "belong": belong,
+  List<DBMetaEdge> doParseEdge(ConstantReader ann) {
+    var edgesField = ann.read("edges");
+    if (edgesField.isNull) {
+      return [];
+    }
+    var iterator = edgesField.listValue.iterator;
+    List<DBMetaEdge> rets = [];
+    while (iterator.moveNext()) {
+      rets.add(DBMetaEdge(
+        table: iterator.current.getField("table")!.toStringValue()!,
+        type: DBEdgeType.values[iterator.current
+            .getField("type")!
+            .getField("index")!
+            .toIntValue()!],
+        unique: iterator.current.getField("unique")!.toBoolValue()!,
+      ));
+    }
+    return rets;
+  }
+
+  void parseCheck() {
+    pp.tables.forEach((pt) {
+      pt.edges.forEach((edge) {
+        parseTable? et = pp.table(edge.table);
+        if (et == null) {
+          throw "${edge.table} table schema not define on ${pt.table} table edge check";
+        }
+
+        DBMetaEdge? dbme = et.edgeMap[pt.table];
+        if (dbme == null) {
+          throw "${edge.table} table schema not define ${pt.table} edge on ${pt.table} table edge check";
+        }
+
+        if (edge.type == dbme.type) {
+          throw "edge type equal on ${pt.table} & ${edge.table}";
+        }
       });
-      if (belong) {
-        if (unique) {
-          edgeFunction += '''
-Future<List<$relationTable>?>get$relationTable(int identity) async {
-  var rows = await db.rawQuery("select * from $relationTable where ${classElement.name}_id = ? limit 1", [identity])
-  if(rows.isEmpty) {
-    return null;
-  }
-  return $relationTable\JSONHelp.fromJson(rows[0]);
-}
-''';
-        } else {
-          edgeFunction += '''
-Future<List<$relationTable>?>get$relationTable\s(int identity) async {
-  return (await db.rawQuery("select * from $relationTable where ${classElement.name}_id = ?", [identity]))
-    .map((e) => $relationTable\JSONHelp.fromJson(e)).toList();
-}
-''';
-        }
-      } else {
-        if (unique) {
-          var selfRelationField = "${relationTable}_id";
-          edgeField.add(selfRelationField);
-          edgeFunction += '''
-Future<int>set$relationTable(int identity, int $relationTable\_identity) async {
-  return await db.rawUpdate("update ${classElement.name} set $selfRelationField = ? where $selfField = ?", [$relationTable\_identity, identity]);
-}
-Future<$relationTable?>get$relationTable(int identity) async {
-  var rows = await db.rawQuery("select t1.* from ${classElement.name} as s left join $relationTable as t1 where s.$selfField = ? and t1.$relationField = s.$selfRelationField", [identity]);
-  if(rows.isEmpty) {
-    return null;
-  }
-
-  return ${relationTable}JSONHelp.fromJson(rows[0]);
-}
-''';
-        } else {
-          edgeSchema.addAll([
-            '''
-create table if not exists $relationDBTable (
-    ${classElement.name}_id INTEGER,
-    ${relationTable}_id INTEGER
-  );
-''',
-            '''
-CREATE INDEX ${classElement.name}_index
-ON $relationDBTable (${classElement.name}_id);
-'''
-          ]);
-          edgeFunction += '''
-Future<void>del$relationTable\s(int identity) async {
-  await db.rawDelete("delete from $relationDBTable where ${classElement.name}_id = ?", [identity]);
-}
-Future<void>set$relationTable\s(int identity, List<int> $relationTable\_identities) async {
-  await del$relationTable\s(identity);
-  var iterator = $relationTable\_identities.iterator;
-  while(iterator.moveNext()) {
-    await db.rawInsert("insert into $relationDBTable(${classElement.name}_id, $relationTable\_id) values(?, ?)", [identity, iterator.current]);
-  }
-}
-Future<List<$relationTable>>get$relationTable\s(int identity) async {
-  return (await db.rawQuery("select * from $relationTable where $relationField in (select $relationTable\_id from $relationDBTable where ${classElement.name}_id=?)", [identity]))
-    .map((e) => $relationTable\JSONHelp.fromJson(e)).toList();
-}  
-''';
-        }
-      }
     });
-
-    var fieldStr = '''
-  $edgeFunction
-
-  Future<List<${classElement.name}>>all() async {
-    return (await db.rawQuery("select * from \$dbTable"))
-      .map((e) => ${classElement.name}JSONHelp.fromJson(e)).toList();
   }
 
-  Future<int>insert(${classElement.name} obj) async {
-    return await db.insert(dbTable, ${classElement.name}JSONHelp.toJson(obj));
+  parseTable doParseTable(ConstantReader ann) {
+    var p = parseTable();
+    p.table = ann.read("table").stringValue;
+    p.fields = doParseField(ann);
+    p.edges = doParseEdge(ann);
+    parseCheck();
+    // todo support index
+    return p;
   }
 
-  Future<int>updateWhere(${classElement.name} obj, String? where, List<Object?>? whereArgs) async {
-    return await db.update(dbTable, ${classElement.name}JSONHelp.toJson(obj), where: where, whereArgs: whereArgs);
-  }
-''';
-
-    var hasPK = false;
-    var schema = "";
-
-    edgeField.forEach((element) {
-      schema += '''
-    $element INTEGER,
-''';
-    });
-
-    var cfLen = classElement.fields.length - 1;
-    for (var i = 0; i <= cfLen; i++) {
-      var e = classElement.fields[i];
-      var dbFieldName = e.name;
-      var dbFieldVarName = "${e.name}\Field";
-      if (_coreJSONKeyChecker.hasAnnotationOfExact(e)) {
-        dbFieldName = _coreJSONKeyChecker
-            .firstAnnotationOfExact(e)!
-            .getField("name")!
-            .toStringValue()!;
-      }
-
-      var isPk = false;
-      var autoInsert = false;
-      if (!hasPK && _coreDBPKChecker.hasAnnotationOfExact(e)) {
-        isPk = true;
-        hasPK = true;
-
-        bool? autoInsertValue = _coreDBPKChecker
-            .firstAnnotationOfExact(e)!
-            .getField("AutoInsert")
-            ?.toBoolValue();
-        if (autoInsertValue != null && autoInsertValue) {
-          autoInsert = true;
-        }
-
-        fieldStr += '''
-  Future<int>delete(${e.type} ${e.name}) async {
-    ${edgeList.map((element) => (element["unique"] as bool) || (element["belong"] as bool) ? "" : '''
-  await del${element["relationTable"]}\s(${e.name}!);
-''').toList().join("\n")}
-    return await db.rawDelete("delete from \$dbTable where \$$dbFieldVarName = ?", [${e.name}]);
-  }
-
-  Future<int>update(${e.type} ${e.name}, ${classElement.name} obj) async {
-    return await updateWhere(obj, "\$$dbFieldVarName = ?", [${e.name}]);
-  }
-
-  Future<${classElement.name}?>first(${e.type} ${e.name}) async {
-    //ignore more rows
-    var rows = await db.rawQuery("select * from \$dbTable where \$$dbFieldVarName = ? limit 1", [${e.name}]);
-    if(rows.isEmpty) {
-      return null;
+  @override
+  FutureOr<String> generate(LibraryReader library, BuildStep buildStep) async {
+    for (var annotatedElement in library.annotatedWith(typeChecker)) {
+      pp.tables.add(doParseTable(annotatedElement.annotation));
     }
 
-    return ${classElement.name}JSONHelp.fromJson(rows[0]);
-  }
-''';
-      }
-
-      fieldStr += '''
-  static const $dbFieldVarName = "$dbFieldName";
-''';
-      var schemaPlus = "";
-      if (isPk) {
-        schemaPlus = " PRIMARY KEY ${autoInsert ? "AUTOINCREMENT" : ""}";
-      }
-      schema += '''
-  \$$dbFieldVarName ${e.type.isDartCoreString ? "TEXT" : "INTEGER"}$schemaPlus${i == cfLen ? "" : ","}
-  ''';
+    if (pp.tables.isEmpty) {
+      return "";
     }
 
-    fieldStr += '''
-  static const dbTable = "${classElement.name}";
-  static const dbSchema = \'''
-  create table if not exists \$dbTable (
-  $schema
-  );
-  ${edgeSchema.join("\n")}
+    String output = "";
+    pp.tables.forEach((element) {
+      output += render(buildStep, element);
+    });
+    pp.tables = [];
+
+    return normalizeGeneratorOutput(output).join("");
+  }
+
+  String renderUtil() {
+    return '''
+  String dateTime2String(DateTime data) {
+    return data.toIso8601String();
+  }
+  DateTime string2DateTime(String data) {
+    return DateTime.parse(data);
+  }
+
+  int bool2Int(bool data) {
+    return data ? 0 : 1;
+  }
+  bool int2Bool(int data) {
+    return data == 0;
+  }
+''';
+  }
+
+  String render(BuildStep bs, parseTable pt) {
+    List<String> rets = [
+      renderPart(bs),
+      renderClient(pt),
+      renderType(pt),
+      renderUtil()
+    ];
+
+    return rets.join("\n");
+  }
+
+  String renderType(parseTable pt) {
+    var ptt = formatType(pt.table);
+    return '''
+class $ptt {
+  ${pt.fields.map((field) => '''${DBFieldTypeDartTransform[field.type]}? ${field.name};''').toList().join("\n")}
+
+  $ptt({
+     ${pt.fields.map((field) => "this.${field.name}").toList().join(",\n")}
+  });
+
+  // idea from JsonSerializableGenerator
+  $ptt.fromMap(Map data) {
+    ${pt.fields.map((field) {
+              String getData =
+                  '''data["${field.name}"] as ${DBFieldTypeDartTransform[field.type]}?''';
+              switch (field.type) {
+                case DBFieldType.DateTime:
+                  getData =
+                      '''data["${field.name}"] == null ? null : string2DateTime(data["${field.name}"] as String)''';
+                  break;
+                case DBFieldType.Bool:
+                  getData =
+                      '''data["${field.name}"] == null ? null : int2Bool(data["${field.name}"] as int)''';
+                  break;
+                default:
+              }
+              return '''${field.name} = $getData;''';
+            }).toList().join("\n")}
+  }
+
+  // idea from JsonSerializableGenerator
+  Map<String, Object?> toMap() {
+    final val = <String, Object?>{};
+
+    void writeNotNull(String key, dynamic value) {
+      if (value != null) {
+        val[key] = value;
+      }
+    }
+
+    ${pt.fields.map((field) {
+              String getData = field.name;
+              switch (field.type) {
+                case DBFieldType.DateTime:
+                  getData =
+                      '''${field.name} == null ? null : dateTime2String(${field.name}!)''';
+                  break;
+                case DBFieldType.Bool:
+                  getData =
+                      '''${field.name} == null ? null : bool2Int(${field.name}!)''';
+                  break;
+                default:
+              }
+              return '''writeNotNull('${field.name}', $getData);''';
+            }).toList().join("\n")}
+
+    return val;
+  }
+}
+''';
+  }
+
+  String renderPart(BuildStep bs) {
+    return "part of '${Path.basename(bs.inputId.path)}';";
+  }
+
+  String renderClient(parseTable pt) {
+    return '''
+class ${pt.table}Client {
+  Database db;
+  ${pt.table}Client(this.db);
+
+  ${renderClientSchema(pt)}
+}
+''';
+  }
+
+  List<DBMetaField> loadTableEdgeFields(parseTable pt) {
+    List<DBMetaField> ret = [];
+    pt.edges.forEach((element) {
+      if (!element.unique || element.type == DBEdgeType.To) {
+        return;
+      }
+
+      ret.add(DBMetaField(
+        name: formatEdgeField(element.table),
+        type: DBFieldType.Int,
+        required: true,
+      ));
+    });
+    return ret;
+  }
+
+  String formatType(String prefix) {
+    return "$prefix\Type";
+  }
+
+  String formatEdgeField(String prefix) {
+    return "$prefix\_ref";
+  }
+
+  String formatEdgeTable(String main, edge) {
+    return "$main\_$edge";
+  }
+
+  String renderClientEdgeSchema(parseTable pt) {
+    List<String> ret = [];
+    pt.edges.forEach((element) {
+      if (element.unique || element.type != DBEdgeType.To) {
+        return;
+      }
+
+      // M2M
+      if (pp.table(element.table)!.edgeMap[pt.table]!.unique) {
+        return;
+      }
+
+      ret.add('''
+create table if not exists ${formatEdgeTable(pt.table, element.table)} (
+${formatEdgeField(pt.table)} INTEGER not null,
+${formatEdgeField(element.table)} INTEGER not null
+);
+''');
+    });
+    return ret.join("\n");
+  }
+
+  String renderClientFunc(parseTable pt) {
+    return '''
+  Future<List<${formatType(pt.table)}>>all() async {
+    return (await db.rawQuery("select * from \$table"))
+      .map((e) => ${formatType(pt.table)}.fromMap(e)).toList();
+  }
+
+  Future<List<${formatType(pt.table)}>>query(String sub, [List<Object?>? arguments]) async {
+    return (await db.rawQuery("select * from \$table \$sub", arguments))
+      .map((e) => ${formatType(pt.table)}.fromMap(e)).toList();
+  }
+
+  Future<int>insert(${formatType(pt.table)} obj) async {
+    return await db.insert(table, obj.toMap());
+  }
+
+  Future<int>updateWhere(${formatType(pt.table)} obj, String? where, List<Object?>? whereArgs) async {
+    return await db.update(table, obj.toMap(), where: where, whereArgs: whereArgs);
+  }
+''';
+  }
+
+  String renderClientSchema(parseTable pt) {
+    List<DBMetaField> efs = loadTableEdgeFields(pt);
+    String fields = [
+      ...pt.fields,
+      ...efs,
+    ]
+        .map((field) =>
+            "${field.name} ${DBFieldTypeTransform[field.type]} ${field.pk ? "PRIMARY KEY" : ""} ${field.autoIncrement ? "AUTOINCREMENT" : ""} ${field.required ? "not null" : ""}")
+        .toList()
+        .join("\n");
+
+    return '''
+${renderClientFunc(pt)}
+${pt.fields.map((e) => '''
+  static const ${e.name}Field="${e.name}";''').toList().join("\n")}
+static const table = "${pt.table}";
+static const schema = \'''
+create table if not exists ${pt.table} (
+  $fields
+);
+${renderClientEdgeSchema(pt)}
 \''';
 ''';
-    return fieldStr;
   }
 }
