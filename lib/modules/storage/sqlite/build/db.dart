@@ -243,7 +243,7 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
             // 只需要在卡表加用户id即可
             rets.add('''
   Future<${element.unique ? "" : "List<"}${formatType(element.table)}${element.unique ? (element.required ? "" : "?") : ">"}>query${element.table}${element.unique ? "" : "s"}() async {
-    var rows = clientSet.${element.table}().query("where ${formatEdgeField(pt.table)} = ? ${element.unique ? "limit 1" : ""}", [$IDField]);
+    var rows = clientSet.${element.table}().query("select * from \${${formatClient(element.table)}.table} where ${formatEdgeField(pt.table)} = ? ${element.unique ? "limit 1" : ""}", [$IDField]);
     ${element.unique ? '''
     if(rows.isEmpty) {
       return null;
@@ -285,16 +285,16 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
             // 一个卡只有一个用户持有
             rets.add('''
   Future<${formatType(element.table)}?>query${element.table}() async {
-    var rows = await clientSet.${element.table}().query("where $IDField = ? limit 1", [${formatEdgeField(element.table)}]);
+    var rows = await clientSet.${element.table}().query("select * from \${${formatClient(element.table)}.table} where $IDField = ? limit 1", [${formatEdgeField(element.table)}]);
     if(rows.isEmpty) {
       return null;
     }
     return rows[0];
   }
 
-  Future<${formatType(pt.table)}>set${element.table}(int idx) async {
+  ${formatType(pt.table)} set${element.table}(int idx) {
     ${formatEdgeField(element.table)} = idx;
-    return await save();
+    return this;
   }
 ''');
           } else {
@@ -501,7 +501,7 @@ ${formatEdgeField(element.table)} INTEGER not null
   Future<List<${formatType(pt.table)}>>all() async {
     return await query("select * from \$table", []);
   }
-
+  
   Future<List<${formatType(pt.table)}>>query(String query, [List<Object?>? arguments]) async {
     return (await clientSet.db.rawQuery(query, arguments))
       .map((e) => newTypeByRow(e)).toList();
