@@ -175,19 +175,14 @@ save: (FormData data) async {
 
     DBClientSet appDB = await Application.instance!.make("app_db");
 
-    var item = appDB.Award().newType();
-    // 更新
-    if (widget.identity != 0) {
-        item = (await appDB.Award().first(widget.identity))!;
-    }
-
-    // 填充并保存 丝滑般的享受
-    await item.fill(data.data).save();
-
-    // 补全关联关系
-    await item.setPlans(
-        (data.data[plansField] as List).map((e) => e as int).toList());
-    await item.setThing(data.data[thingField]);
+    // 丝滑
+    await appDB.transaction(() async {
+        var item = await (await appDB.Award().firstOrNew(widget.identity)).fill(data.data).save();
+        await item.setPlans((data.data[plansField] as List)
+            .map((e) => e as int)
+            .toList());
+        await item.setThing(data.data[thingField]);
+    });
 
     tip.TextAlertDescWithCB(
         context, "一切都好", () => Navigator.pop(context));

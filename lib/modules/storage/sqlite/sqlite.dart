@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart' as sqliteSDk;
 
 typedef Database = sqliteSDk.Database;
+typedef DatabaseExec = sqliteSDk.DatabaseExecutor;
 
 class sqlite {
   String path = "";

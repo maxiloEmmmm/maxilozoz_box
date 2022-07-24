@@ -183,15 +183,29 @@ class DBGenerator extends Generator {
     ${pp.tables.map((table) {
               return '''
   ${formatClient(table.table)} ${table.table}(){
-    return ${formatClient(table.table)}(db, this);       
+    return ${formatClient(table.table)}(this);       
   }''';
             }).toList().join("\n")}
 
-    Database db;
+    DatabaseExec db;
     static const schema = \'''
 ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n")}
 \''';
     $DBClientSetClass(this.db);
+
+    Future<void> transaction(Future<void> Function() cb) async {
+      var _db = db;
+      try {
+        await (db as Database).transaction((txn) async {
+          db = txn;
+          await cb();
+        });
+      }catch(e) {
+        db = _db;
+        throw e.toString();
+      }
+      db = _db;
+    }
   }
 
   String dateTime2String(DateTime data) {
@@ -257,10 +271,10 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
 '''}
   }
 
-  Future<void>set${element.table}${element.unique ? "" : "s"}(${!element.unique ? "List<int> ids" : "int id"}) async {
-    ${element.unique ? "var ids = [id];" : ""}
-    while(ids.iterator.moveNext()) {
-      await clientSet.db.rawInsert("insert into ${formatEdgeTable(pt.table, element.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, ids.iterator.current]);
+  Future<void>set${element.table}${element.unique ? "" : "s"}(${!element.unique ? "List<int> ids" : "int idx"}) async {
+    var it = ${element.unique ? "[idx]" : "ids"}.iterator;
+    while(it.moveNext()) {
+      await clientSet.db.rawInsert("insert into ${formatEdgeTable(pt.table, element.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, it.current]);
     }
   }
 ''');
@@ -278,8 +292,8 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
     return rows[0];
   }
 
-  Future<${formatType(pt.table)}>set${element.table}(int id) async {
-    ${formatEdgeField(element.table)} = id;
+  Future<${formatType(pt.table)}>set${element.table}(int idx) async {
+    ${formatEdgeField(element.table)} = idx;
     return await save();
   }
 ''');
@@ -292,8 +306,9 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
   }
   Future<void>set${element.table}s(List<int> ids) async {
     await clientSet.db.rawDelete("delete from ${formatEdgeTable(element.table, pt.table)} where ${formatEdgeField(pt.table)} = ?", [$IDField]);
-    while(ids.iterator.moveNext()) {
-      await clientSet.db.rawInsert("insert into ${formatEdgeTable(element.table, pt.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, ids.iterator.current]);
+    var it = ids.iterator;
+    while(it.moveNext()) {
+      await clientSet.db.rawInsert("insert into ${formatEdgeTable(element.table, pt.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, it.current]);
     }
     return;
   }
@@ -349,6 +364,17 @@ class $ptt {
               return '''
 if(data["${field.name}"] != null) {
   ${field.name} = data["${field.name}"] as ${DBFieldTypeDartTransform[field.type]};
+}
+''';
+            }).toList().join("\n")}
+    return this;
+  }
+
+  $ptt fillByType($ptt obj) {
+    ${pt.typeFields.map((field) {
+              return '''
+if(obj.${field.name} != null) {
+  ${field.name} = obj.${field.name};
 }
 ''';
             }).toList().join("\n")}
@@ -415,8 +441,7 @@ if(data["${field.name}"] != null) {
     return '''
 class ${formatClient(pt.table)} {
   $DBClientSetClass clientSet;
-  Database db;
-  ${pt.table}Client(this.db, this.clientSet);
+  ${pt.table}Client(this.clientSet);
 
   ${renderClientSchema(pt)}
 }
@@ -443,7 +468,7 @@ ${formatEdgeField(element.table)} INTEGER not null
   String renderClientFunc(parseTable pt) {
     return '''
   Future<int>delete(int id) async {
-    return await db.rawDelete("delete from \$table where $IDField = ?", [id]);
+    return await clientSet.db.rawDelete("delete from \$table where $IDField = ?", [id]);
   }
 
   Future<${formatType(pt.table)}?>first(int id) async {
@@ -455,6 +480,19 @@ ${formatEdgeField(element.table)} INTEGER not null
     return rows[0];
   } 
 
+  Future<${formatType(pt.table)}>firstOrNew(int id) async {
+    var rows = await query("select * from \$table where $IDField = ?", [id]);
+    if(rows.isEmpty) {
+      var item =${formatType(pt.table)}();
+      if(id > 0) {
+        item.id = id;
+      }
+      return wrapType(item);
+    }
+    
+    return rows[0];
+  }
+
   ${formatType(pt.table)} wrapType(${formatType(pt.table)} typ) {
     typ.clientSet = clientSet;
     return typ;
@@ -465,16 +503,16 @@ ${formatEdgeField(element.table)} INTEGER not null
   }
 
   Future<List<${formatType(pt.table)}>>query(String query, [List<Object?>? arguments]) async {
-    return (await db.rawQuery(query, arguments))
+    return (await clientSet.db.rawQuery(query, arguments))
       .map((e) => newTypeByRow(e)).toList();
   }
 
   Future<int>insert(${formatType(pt.table)} obj) async {
-    return await db.insert(table, obj.toDB());
+    return await clientSet.db.insert(table, obj.toDB());
   }
 
   Future<int>update(${formatType(pt.table)} obj) async {
-    return await db.update(table, obj.toDB(), where: "$IDField = ?", whereArgs: [obj.$IDField!]);
+    return await clientSet.db.update(table, obj.toDB(), where: "$IDField = ?", whereArgs: [obj.$IDField!]);
   }
 
   ${formatType(pt.table)} newType() {
@@ -492,11 +530,11 @@ ${formatEdgeField(element.table)} INTEGER not null
         .map((field) =>
             "${field.name} ${DBFieldTypeTransform[field.type]} ${field.pk ? "PRIMARY KEY" : ""} ${field.autoIncrement ? "AUTOINCREMENT" : ""} ${field.required ? "not null" : ""}")
         .toList()
-        .join("\n");
+        .join(",\n");
 
     return '''
 ${renderClientFunc(pt)}
-${pt.fields.map((e) => '''
+${pt.typeFields.map((e) => '''
   static const ${e.name}Field="${e.name}";''').toList().join("\n")}
 static const table = "${pt.table}";
 static const schema = \'''
