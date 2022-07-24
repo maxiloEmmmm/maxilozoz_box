@@ -96,64 +96,102 @@ flutter test test/[*].dart
 ```
 
 ### Sqlite(建设中)
-> gen code
-
+> gen code 表结构定义
 ```dart
-//user.dart
 import "package:maxilozoz_box/modules/storage/sqlite/sqlite.dart";
-import 'package:maxilozoz_box/modules/storage/sqlite/build/db.dart';
-import 'package:focus/pkg/converters/bool_int.dart';
-import 'package:json_annotation/json_annotation.dart';
-part 'user.g.dart';
-part 'user.db.g.dart';
+import 'package:maxilozoz_box/modules/storage/sqlite/build/annotation.dart';
+part 'db.db.g.dart';
 
-@JsonSerializable(
-  includeIfNull: false,
-  converters: [Bool2Int()]
+@DBSchema(
+  fields: [
+    // 字段定义
+    DBMetaField(name: "identity"),
+    DBMetaField(name: "apiKey"),
+  ],
 )
-@DBAnnotation()
-class User {
-    @DBPKAnnotation()
-    int? id;
-    String? name;
-    int? level;
-    bool? master;
-    int? departmentID
+class Ngrok {}
 
-    factory User.fromJson(Map<String, dynamic> json) =>
-      _$UserFromJson(json);
-
-    Map<String, dynamic> toJson() => _$UserToJson(this);
-}
-
-//department.dart
-import "package:maxilozoz_box/modules/storage/sqlite/sqlite.dart";
-import 'package:maxilozoz_box/modules/storage/sqlite/build/db.dart';
-import 'package:focus/pkg/converters/bool_int.dart';
-import 'package:json_annotation/json_annotation.dart';
-part 'department.g.dart';
-part 'department.db.g.dart';
-@JsonSerializable(
-  includeIfNull: false,
+@DBSchema(
+  fields: [
+    DBMetaField(name: "name"),
+    DBMetaField(name: "desc"),
+  ],
+  edges: [
+    DBMetaEdge(table: "Plan", type: DBEdgeType.To),
+    DBMetaEdge(table: "Thing", type: DBEdgeType.To, unique: true),
+  ],
 )
-@DBAnnotation()
-class Department {
-    @DBPKAnnotation()
-    int? id;
-    String? name;
+class Award {}
 
-    factory Department.fromJson(Map<String, dynamic> json) =>
-      _$DepartmentFromJson(json);
+@DBSchema(
+  fields: [
+    DBMetaField(name: "name"),
+    DBMetaField(name: "desc"),
+    DBMetaField(name: "createdAt", type: DBFieldType.DateTime),
+    DBMetaField(name: "deadLine", type: DBFieldType.DateTime),
+    DBMetaField(name: "finishAt", type: DBFieldType.DateTime),
+    DBMetaField(name: "joint", type: DBFieldType.Int),
+    DBMetaField(name: "jointCount", type: DBFieldType.Int),
+  ],
+  edges: [
+    DBMetaEdge(table: "Award", type: DBEdgeType.From),
+    DBMetaEdge(table: "PlanDetail", type: DBEdgeType.To),
+  ],
+)
+class Plan {}
 
-    Map<String, dynamic> toJson() => _$DepartmentToJson(this);
-}
+@DBSchema(
+  fields: [
+    DBMetaField(name: "hit", type: DBFieldType.Int),
+    DBMetaField(name: "desc"),
+    DBMetaField(name: "createdAt", type: DBFieldType.DateTime),
+  ],
+  edges: [
+    DBMetaEdge(table: "Plan", type: DBEdgeType.From, unique: true),
+  ],
+)
+class PlanDetail {}
+
+@DBSchema(
+  fields: [
+    DBMetaField(name: "name"),
+    DBMetaField(name: "desc"),
+  ],
+  edges: [
+    DBMetaEdge(table: "Award", type: DBEdgeType.From),
+  ],
+)
+class Thing {}
 ```
 ```shell
 dart run build_runner build
 ```
 ```dart
-var client = UserClient(db)
-var user = await client.first(1)
+save: (FormData data) async {
+    if (!data.valid) {
+        tip.TextAlertDesc(context, "请检查!");
+        return;
+    }
+
+    DBClientSet appDB = await Application.instance!.make("app_db");
+
+    var item = appDB.Award().newType();
+    // 更新
+    if (widget.identity != 0) {
+        item = (await appDB.Award().first(widget.identity))!;
+    }
+
+    // 填充并保存 丝滑般的享受
+    await item.fill(data.data).save();
+
+    // 补全关联关系
+    await item.setPlans(
+        (data.data[plansField] as List).map((e) => e as int).toList());
+    await item.setThing(data.data[thingField]);
+
+    tip.TextAlertDescWithCB(
+        context, "一切都好", () => Navigator.pop(context));
+}
 ```
 
 ### HTTP

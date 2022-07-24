@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:json_annotation/json_annotation.dart';
 import 'package:maxilozoz_box/modules/storage/sqlite/build/annotation.dart';
 import 'package:source_gen/source_gen.dart';
 import 'package:source_gen/src/output_helpers.dart';
@@ -8,8 +7,21 @@ import 'package:analyzer/dart/element/element.dart' as e;
 import 'package:build/build.dart';
 import 'package:path/path.dart' as Path;
 
-const _coreDBPKChecker = const TypeChecker.fromRuntime(DBPKAnnotation);
-const _coreJSONKeyChecker = const TypeChecker.fromRuntime(JsonKey);
+String formatType(String prefix) {
+  return "$prefix\Type";
+}
+
+String formatClient(String prefix) {
+  return "$prefix\Client";
+}
+
+String formatEdgeField(String prefix) {
+  return "$prefix\_ref";
+}
+
+String formatEdgeTable(String main, edge) {
+  return "$main\_$edge";
+}
 
 class parseTable {
   List<DBMetaField> fields = [];
@@ -23,6 +35,20 @@ class parseTable {
       ret[element.table] = element;
     });
     return ret;
+  }
+
+  List<DBMetaField> get typeFields {
+    return [
+      ...fields,
+      ...edges
+          .where((element) => element.type == DBEdgeType.From && element.unique)
+          .map((e) {
+        return DBMetaField(
+            name: formatEdgeField(e.table),
+            type: DBFieldType.Int,
+            required: e.required);
+      }).toList()
+    ];
   }
 }
 
@@ -115,37 +141,59 @@ class DBGenerator extends Generator {
     });
   }
 
-  parseTable doParseTable(ConstantReader ann) {
+  parseTable doParseTable(String table, ConstantReader ann) {
     var p = parseTable();
-    p.table = ann.read("table").stringValue;
+    p.table = table;
     p.fields = doParseField(ann);
     p.edges = doParseEdge(ann);
-    parseCheck();
     // todo support index
     return p;
   }
 
   @override
   FutureOr<String> generate(LibraryReader library, BuildStep buildStep) async {
+    pp.tables = [];
     for (var annotatedElement in library.annotatedWith(typeChecker)) {
-      pp.tables.add(doParseTable(annotatedElement.annotation));
+      if (!(annotatedElement.element is e.ClassElement)) {
+        throw 'db annotation must on class';
+      }
+      pp.tables.add(doParseTable(
+          (annotatedElement.element as e.ClassElement).name,
+          annotatedElement.annotation));
     }
 
     if (pp.tables.isEmpty) {
       return "";
     }
 
-    String output = "";
+    parseCheck();
+
+    String output = [renderPart(buildStep), renderUtil(), "\n"].join("\n");
     pp.tables.forEach((element) {
-      output += render(buildStep, element);
+      output += render(element);
     });
-    pp.tables = [];
 
     return normalizeGeneratorOutput(output).join("");
   }
 
+  static const DBClientSetClass = "DBClientSet";
   String renderUtil() {
     return '''
+  class $DBClientSetClass {
+    ${pp.tables.map((table) {
+              return '''
+  ${formatClient(table.table)} ${table.table}(){
+    return ${formatClient(table.table)}(db, this);       
+  }''';
+            }).toList().join("\n")}
+
+    Database db;
+    static const schema = \'''
+${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n")}
+\''';
+    $DBClientSetClass(this.db);
+  }
+
   String dateTime2String(DateTime data) {
     return data.toIso8601String();
   }
@@ -162,30 +210,153 @@ class DBGenerator extends Generator {
 ''';
   }
 
-  String render(BuildStep bs, parseTable pt) {
-    List<String> rets = [
-      renderPart(bs),
-      renderClient(pt),
-      renderType(pt),
-      renderUtil()
-    ];
+  String render(parseTable pt) {
+    List<String> rets = [renderClient(pt), renderType(pt)];
 
     return rets.join("\n");
   }
 
+  String renderTypeEdgeFunc(parseTable pt) {
+    List<String> rets = [];
+    pt.edges.forEach((element) {
+      DBMetaEdge edge = pp.table(element.table)!.edgeMap[pt.table]!;
+      switch (element.type) {
+        case DBEdgeType.To:
+          if (edge.unique) {
+            // 举例 用户和卡片
+            // 这里处理一个用户有一张或多张卡
+            // 一张卡只对应一个用户的情况
+            // 只需要在卡表加用户id即可
+            rets.add('''
+  Future<${element.unique ? "" : "List<"}${formatType(element.table)}${element.unique ? (element.required ? "" : "?") : ">"}>query${element.table}${element.unique ? "" : "s"}() async {
+    var rows = clientSet.${element.table}().query("where ${formatEdgeField(pt.table)} = ? ${element.unique ? "limit 1" : ""}", [$IDField]);
+    ${element.unique ? '''
+    if(rows.isEmpty) {
+      return null;
+    }
+    return rows[0];
+''' : '''
+    return rows;
+'''}
+  }
+''');
+          } else {
+            // 这里处理一个用户有一或多张卡
+            // 一张卡对应一个或多个用户的情况
+            // 应在中间表进行查询
+            rets.add('''
+  Future<${element.unique ? "" : "List<"}${formatType(element.table)}${element.unique ? (element.required ? "" : "?") : ">"}>query${element.table}${element.unique ? "" : "s"}() async {
+    var rows = await clientSet.db.rawQuery("select * from \${${formatClient(element.table)}.table} where id in (select ${formatEdgeField(element.table)} from ${formatEdgeTable(pt.table, element.table)} where ${formatEdgeField(pt.table)} = ? ${element.unique ? "limit 1" : ""})", [$IDField]);
+    ${element.unique ? '''
+    if(rows.isEmpty) {
+      return null;
+    }
+    return clientSet.${element.table}().newTypeByRow(rows[0]);
+''' : '''
+    return rows.map((row) => clientSet.${element.table}().newTypeByRow(row)).toList();
+'''}
+  }
+
+  Future<void>set${element.table}${element.unique ? "" : "s"}(${!element.unique ? "List<int> ids" : "int id"}) async {
+    ${element.unique ? "var ids = [id];" : ""}
+    while(ids.iterator.moveNext()) {
+      await clientSet.db.rawInsert("insert into ${formatEdgeTable(pt.table, element.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, ids.iterator.current]);
+    }
+  }
+''');
+          }
+          break;
+        case DBEdgeType.From:
+          if (element.unique) {
+            // 一个卡只有一个用户持有
+            rets.add('''
+  Future<${formatType(element.table)}?>query${element.table}() async {
+    var rows = await clientSet.${element.table}().query("where $IDField = ? limit 1", [${formatEdgeField(element.table)}]);
+    if(rows.isEmpty) {
+      return null;
+    }
+    return rows[0];
+  }
+
+  Future<${formatType(pt.table)}>set${element.table}(int id) async {
+    ${formatEdgeField(element.table)} = id;
+    return await save();
+  }
+''');
+          } else {
+            // 一个卡多个用户持有
+            rets.add('''
+  Future<List<${formatType(element.table)}>>query${element.table}() async {
+    var rows = await clientSet.db.rawQuery("select * from \${${formatClient(element.table)}.table} where id in (select ${formatEdgeField(element.table)} from ${formatEdgeTable(element.table, pt.table)} where ${formatEdgeField(pt.table)} = ? limit 1)", [$IDField]);
+    return rows.map((row) => clientSet.${element.table}().newTypeByRow(row)).toList();
+  }
+  Future<void>set${element.table}s(List<int> ids) async {
+    await clientSet.db.rawDelete("delete from ${formatEdgeTable(element.table, pt.table)} where ${formatEdgeField(pt.table)} = ?", [$IDField]);
+    while(ids.iterator.moveNext()) {
+      await clientSet.db.rawInsert("insert into ${formatEdgeTable(element.table, pt.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, ids.iterator.current]);
+    }
+    return;
+  }
+''');
+          }
+      }
+    });
+    return rets.toList().join("\n");
+  }
+
+  String renderTypeFunc(parseTable pt) {
+    return '''
+  Future<${formatType(pt.table)}>save() async {
+    if($IDField == null) {
+      $IDField = await clientSet.${pt.table}().insert(this);
+    }else {
+      await clientSet.${pt.table}().update(this);
+    }
+
+    return (await clientSet.${pt.table}().first($IDField!))!;
+  }
+
+  Future<int>destory() async {
+    if($IDField == null) {
+      throw "current type not allow this opeart";
+    }
+    ${pt.edges.where((element) => !element.unique && element.type == DBEdgeType.From).map((element) {
+              return '''await clientSet.db.rawDelete("delete from ${formatEdgeTable(element.table, pt.table)} where ${formatEdgeField(pt.table)} = ?", [$IDField]);''';
+            }).toList().join("\n")}
+    return await clientSet.${pt.table}().delete($IDField!);
+  }
+
+  ${renderTypeEdgeFunc(pt)}
+''';
+  }
+
   String renderType(parseTable pt) {
     var ptt = formatType(pt.table);
+    // DB and toDB idea from JsonSerializableGenerator
+    // fill idea from laravel php framework
     return '''
 class $ptt {
-  ${pt.fields.map((field) => '''${DBFieldTypeDartTransform[field.type]}? ${field.name};''').toList().join("\n")}
+  late $DBClientSetClass clientSet;
+
+  ${pt.typeFields.map((field) => '''${DBFieldTypeDartTransform[field.type]}? ${field.name};''').toList().join("\n")}
 
   $ptt({
-     ${pt.fields.map((field) => "this.${field.name}").toList().join(",\n")}
+     ${pt.typeFields.map((field) => "this.${field.name}").toList().join(",\n")}
   });
 
-  // idea from JsonSerializableGenerator
-  $ptt.fromMap(Map data) {
-    ${pt.fields.map((field) {
+  $ptt fill(Map data) {
+    ${pt.typeFields.map((field) {
+              return '''
+if(data["${field.name}"] != null) {
+  ${field.name} = data["${field.name}"] as ${DBFieldTypeDartTransform[field.type]};
+}
+''';
+            }).toList().join("\n")}
+    return this;
+  }
+
+  $ptt.DB(Map data) {
+    ${pt.typeFields.map((field) {
               String getData =
                   '''data["${field.name}"] as ${DBFieldTypeDartTransform[field.type]}?''';
               switch (field.type) {
@@ -203,8 +374,7 @@ class $ptt {
             }).toList().join("\n")}
   }
 
-  // idea from JsonSerializableGenerator
-  Map<String, Object?> toMap() {
+  Map<String, Object?> toDB() {
     final val = <String, Object?>{};
 
     void writeNotNull(String key, dynamic value) {
@@ -213,7 +383,7 @@ class $ptt {
       }
     }
 
-    ${pt.fields.map((field) {
+    ${pt.typeFields.map((field) {
               String getData = field.name;
               switch (field.type) {
                 case DBFieldType.DateTime:
@@ -231,6 +401,8 @@ class $ptt {
 
     return val;
   }
+
+  ${renderTypeFunc(pt)}
 }
 ''';
   }
@@ -241,57 +413,25 @@ class $ptt {
 
   String renderClient(parseTable pt) {
     return '''
-class ${pt.table}Client {
+class ${formatClient(pt.table)} {
+  $DBClientSetClass clientSet;
   Database db;
-  ${pt.table}Client(this.db);
+  ${pt.table}Client(this.db, this.clientSet);
 
   ${renderClientSchema(pt)}
 }
 ''';
   }
 
-  List<DBMetaField> loadTableEdgeFields(parseTable pt) {
-    List<DBMetaField> ret = [];
-    pt.edges.forEach((element) {
-      if (!element.unique || element.type == DBEdgeType.To) {
-        return;
-      }
-
-      ret.add(DBMetaField(
-        name: formatEdgeField(element.table),
-        type: DBFieldType.Int,
-        required: true,
-      ));
-    });
-    return ret;
-  }
-
-  String formatType(String prefix) {
-    return "$prefix\Type";
-  }
-
-  String formatEdgeField(String prefix) {
-    return "$prefix\_ref";
-  }
-
-  String formatEdgeTable(String main, edge) {
-    return "$main\_$edge";
-  }
-
   String renderClientEdgeSchema(parseTable pt) {
     List<String> ret = [];
     pt.edges.forEach((element) {
-      if (element.unique || element.type != DBEdgeType.To) {
-        return;
-      }
-
-      // M2M
-      if (pp.table(element.table)!.edgeMap[pt.table]!.unique) {
+      if (element.unique || element.type != DBEdgeType.From) {
         return;
       }
 
       ret.add('''
-create table if not exists ${formatEdgeTable(pt.table, element.table)} (
+create table if not exists ${formatEdgeTable(element.table, pt.table)} (
 ${formatEdgeField(pt.table)} INTEGER not null,
 ${formatEdgeField(element.table)} INTEGER not null
 );
@@ -302,32 +442,53 @@ ${formatEdgeField(element.table)} INTEGER not null
 
   String renderClientFunc(parseTable pt) {
     return '''
-  Future<List<${formatType(pt.table)}>>all() async {
-    return (await db.rawQuery("select * from \$table"))
-      .map((e) => ${formatType(pt.table)}.fromMap(e)).toList();
+  Future<int>delete(int id) async {
+    return await db.rawDelete("delete from \$table where $IDField = ?", [id]);
   }
 
-  Future<List<${formatType(pt.table)}>>query(String sub, [List<Object?>? arguments]) async {
-    return (await db.rawQuery("select * from \$table \$sub", arguments))
-      .map((e) => ${formatType(pt.table)}.fromMap(e)).toList();
+  Future<${formatType(pt.table)}?>first(int id) async {
+    var rows = await query("select * from \$table where $IDField = ?", [id]);
+    if(rows.isEmpty) {
+      return null;
+    }
+    
+    return rows[0];
+  } 
+
+  ${formatType(pt.table)} wrapType(${formatType(pt.table)} typ) {
+    typ.clientSet = clientSet;
+    return typ;
+  } 
+
+  Future<List<${formatType(pt.table)}>>all() async {
+    return await query("select * from \$table", []);
+  }
+
+  Future<List<${formatType(pt.table)}>>query(String query, [List<Object?>? arguments]) async {
+    return (await db.rawQuery(query, arguments))
+      .map((e) => newTypeByRow(e)).toList();
   }
 
   Future<int>insert(${formatType(pt.table)} obj) async {
-    return await db.insert(table, obj.toMap());
+    return await db.insert(table, obj.toDB());
   }
 
-  Future<int>updateWhere(${formatType(pt.table)} obj, String? where, List<Object?>? whereArgs) async {
-    return await db.update(table, obj.toMap(), where: where, whereArgs: whereArgs);
+  Future<int>update(${formatType(pt.table)} obj) async {
+    return await db.update(table, obj.toDB(), where: "$IDField = ?", whereArgs: [obj.$IDField!]);
+  }
+
+  ${formatType(pt.table)} newType() {
+    return wrapType(${formatType(pt.table)}());
+  }
+
+  ${formatType(pt.table)} newTypeByRow(Map row) {
+    return wrapType(${formatType(pt.table)}.DB(row));
   }
 ''';
   }
 
   String renderClientSchema(parseTable pt) {
-    List<DBMetaField> efs = loadTableEdgeFields(pt);
-    String fields = [
-      ...pt.fields,
-      ...efs,
-    ]
+    String fields = pt.typeFields
         .map((field) =>
             "${field.name} ${DBFieldTypeTransform[field.type]} ${field.pk ? "PRIMARY KEY" : ""} ${field.autoIncrement ? "AUTOINCREMENT" : ""} ${field.required ? "not null" : ""}")
         .toList()
