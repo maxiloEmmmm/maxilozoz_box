@@ -89,12 +89,16 @@ class DBGenerator extends Generator {
         print("not support custom id field");
         continue;
       }
+
+      var defaultDefine = iterator.current.getField("default");
+
       rets.add(DBMetaField(
         name: name,
         type: DBFieldType.values[iterator.current
             .getField("type")!
             .getField("index")!
             .toIntValue()!],
+        defaultDefine: defaultDefine == null ? "" : defaultDefine.toString()
       ));
     }
 
@@ -323,6 +327,13 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
     return '''
   Future<${formatType(pt.table)}>save() async {
     if($IDField == null) {
+      ${pt.fields.where((field) => field.defaultDefine.isNotEmpty).map((field) {
+        return '''
+      if(${field.name} == null) {
+        ${field.name} = ${field.defaultDefine};
+      }
+''';
+      }).toList().join("\n")}
       $IDField = await clientSet.${pt.table}().insert(this);
     }else {
       await clientSet.${pt.table}().update(this);

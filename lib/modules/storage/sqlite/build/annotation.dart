@@ -27,6 +27,7 @@ class DBMetaField {
   final bool autoIncrement;
   final bool pk;
   final bool required;
+  final String defaultDefine;
 
   const DBMetaField({
     required this.name,
@@ -34,6 +35,7 @@ class DBMetaField {
     this.autoIncrement = false,
     this.pk = false,
     this.required = false,
+    this.defaultDefine = "",
   });
 }
 
