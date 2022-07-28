@@ -90,7 +90,7 @@ class DBGenerator extends Generator {
         continue;
       }
 
-      var defaultDefine = iterator.current.getField("default");
+      var defaultDefine = iterator.current.getField("defaultDefine");
 
       rets.add(DBMetaField(
         name: name,
@@ -98,7 +98,7 @@ class DBGenerator extends Generator {
             .getField("type")!
             .getField("index")!
             .toIntValue()!],
-        defaultDefine: defaultDefine == null ? "" : defaultDefine.toString()
+        defaultDefine: defaultDefine == null ? "" : defaultDefine.toStringValue()!
       ));
     }
 
@@ -329,9 +329,7 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
     if($IDField == null) {
       ${pt.fields.where((field) => field.defaultDefine.isNotEmpty).map((field) {
         return '''
-      if(${field.name} == null) {
-        ${field.name} = ${field.defaultDefine};
-      }
+      ${field.name} ??= ${field.defaultDefine};
 ''';
       }).toList().join("\n")}
       $IDField = await clientSet.${pt.table}().insert(this);
