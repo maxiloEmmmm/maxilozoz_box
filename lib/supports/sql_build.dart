@@ -1,7 +1,7 @@
 void main() {
   print((QueryBuild()
         ..table(Table.from("t1"))
-        ..where(Eq(s1: "a", s2: 1)))
+        ..where(Eq("a", 1)))
       .toString()
       .compareTo("select * from `t1` where `a` = 1"));
   var t1Table = Table.from("q1");
@@ -10,9 +10,8 @@ void main() {
   print((QueryBuild()
         ..table(t1Table)
         ..select("${t1Table.f("a")}, ${t2Table.f("c")}")
-        ..join(LeftJoin(table: t2Table)
-          ..on(Eq(s1: t1Table.f("a"), s2: t2Table.f("b"))))
-        ..where(Gt(s1: t1Table.f("a"), s2: 5)))
+        ..join(LeftJoin(table: t2Table)..on(Eq(t1Table.f("a"), t2Table.f("b"))))
+        ..where(Gt(t1Table.f("a"), 5)))
       .toString()
       .compareTo(
           '''select `q1`.`a`, `q2`.`c` from `q1` left join `q2` on `q1`.`a` = `q2`.`b` where `q1`.`a` > 5'''));
@@ -20,16 +19,16 @@ void main() {
   print((QueryBuild()
         ..table(t1Table)
         ..select("a")
-        ..where(Or(
-          s1: And(
-            s1: Eq(s1: "a", s2: 1),
-            s2: In(s1: "b", s2: ["1", "ab"]),
-          ),
-          s2: And(
-            s1: Eq(s1: "c", s2: "2"),
-            s2: In(s1: "d", s2: [1, 2, 3]),
-          ),
-        )))
+        ..where(Or([
+          And([
+            Eq("a", 1),
+            In("b", ["1", "ab"]),
+          ]),
+          And([
+            Eq("c", "2"),
+            In("d", [1, 2, 3]),
+          ])
+        ])))
       .toString()
       .compareTo(
           '''select `a` from `q1` where ((`a` = 1) and (`b` in ("1","ab"))) or ((`c` = "2") and (`d` in (1,2,3)))'''));
@@ -54,38 +53,52 @@ String ident(String s) {
   return "`$s`";
 }
 
-class QueryBuild extends Query {
+class QueryBuild<T> extends Query {
   Query? _table;
   List<Query> _where = [];
   List<Query> _join = [];
-  Query? _limit;
+  int? _limit;
+  int? _offset;
   Query? _orderBy;
   String? _select;
 
+  Future<List<T>> Function(String)? queryFunc;
+
   QueryBuild();
 
-  void table(Query t) {
+  Future<List<T>> query() async {
+    return await queryFunc!(toString());
+  }
+
+  QueryBuild<T> table(Query t) {
     _table = t;
+    return this;
   }
 
-  void select(dynamic t) {
+  QueryBuild<T> select(dynamic t) {
     _select = t is Query ? t.toString() : ident(t);
+    return this;
   }
 
-  void where(Query q) {
+  QueryBuild<T> where(Query q) {
     _where.add(q);
+    return this;
   }
 
-  void join(Query q) {
+  QueryBuild<T> join(Query q) {
     _join.add(q);
+    return this;
   }
 
-  void limit(Query q) {
-    _limit = q;
+  QueryBuild<T> limit(int size, [int offset = 0]) {
+    _limit = size;
+    _offset = offset;
+    return this;
   }
 
-  void orderBy(Query q) {
+  QueryBuild<T> orderBy(Query q) {
     _orderBy = q;
+    return this;
   }
 
   String toString() {
@@ -110,7 +123,7 @@ class QueryBuild extends Query {
     }
 
     if (_limit != null) {
-      build += " " + _limit.toString();
+      build += " limit $_limit, $_offset";
     }
 
     return build;
@@ -122,22 +135,22 @@ abstract class Query {
 }
 
 class And extends Query {
-  Query s1, s2;
+  List<Query> s1 = [];
 
-  And({required this.s1, required this.s2});
+  And(this.s1);
 
   String toString() {
-    return "(${s1.toString()}) and (${s2.toString()})";
+    return s1.map((e) => "(${e.toString()})").join(" and ");
   }
 }
 
 class Or extends Query {
-  Query s1, s2;
+  List<Query> s1 = [];
 
-  Or({required this.s1, required this.s2});
+  Or(this.s1);
 
   String toString() {
-    return "(${s1.toString()}) or (${s2.toString()})";
+    return s1.map((e) => "(${e.toString()})").join(" or ");
   }
 }
 
@@ -145,10 +158,10 @@ class In extends Query {
   String s1;
   List<dynamic>? s2;
 
-  In({required this.s1, this.s2});
+  In(this.s1, this.s2);
 
   String toString() {
-    return "${ident(s1.toString())} in (${s2?.map((e) => wrapValue(e)).toList().join(",")})";
+    return "${ident(s1.toString())} in (${s2?.map((e) => e is Query ? e.toString : (e)).toList().join(",")})";
   }
 }
 
@@ -156,7 +169,7 @@ class Eq extends Query {
   String s1;
   dynamic s2;
 
-  Eq({required this.s1, required this.s2});
+  Eq(this.s1, this.s2);
 
   String toString() {
     return "${ident(s1.toString())} = ${wrapValue(s2)}";
@@ -167,7 +180,7 @@ class NEq extends Query {
   Query s1;
   dynamic s2;
 
-  NEq({required this.s1, required this.s2});
+  NEq(this.s1, this.s2);
 
   String toString() {
     return "${ident(s1.toString())} != ${wrapValue(s2)}";
@@ -178,7 +191,7 @@ class Gt extends Query {
   String s1;
   dynamic s2;
 
-  Gt({required this.s1, required this.s2});
+  Gt(this.s1, this.s2);
 
   String toString() {
     return "${ident(s1.toString())} > ${wrapValue(s2)}";
@@ -186,10 +199,10 @@ class Gt extends Query {
 }
 
 class GtE extends Query {
-  Query s1;
+  String s1;
   dynamic s2;
 
-  GtE({required this.s1, required this.s2});
+  GtE(this.s1, this.s2);
 
   String toString() {
     return "${ident(s1.toString())} >= ${wrapValue(s2)}";
@@ -197,10 +210,10 @@ class GtE extends Query {
 }
 
 class Lt extends Query {
-  Query s1;
+  String s1;
   dynamic s2;
 
-  Lt({required this.s1, required this.s2});
+  Lt(this.s1, this.s2);
 
   String toString() {
     return "${ident(s1.toString())} < ${wrapValue(s2)}";
@@ -208,10 +221,10 @@ class Lt extends Query {
 }
 
 class LtE extends Query {
-  Query s1;
+  String s1;
   dynamic s2;
 
-  LtE({required this.s1, required this.s2});
+  LtE(this.s1, this.s2);
 
   String toString() {
     return "${ident(s1.toString())} <= ${wrapValue(s2)}";

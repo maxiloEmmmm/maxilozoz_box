@@ -93,13 +93,13 @@ class DBGenerator extends Generator {
       var defaultDefine = iterator.current.getField("defaultDefine");
 
       rets.add(DBMetaField(
-        name: name,
-        type: DBFieldType.values[iterator.current
-            .getField("type")!
-            .getField("index")!
-            .toIntValue()!],
-        defaultDefine: defaultDefine == null ? "" : defaultDefine.toStringValue()!
-      ));
+          name: name,
+          type: DBFieldType.values[iterator.current
+              .getField("type")!
+              .getField("index")!
+              .toIntValue()!],
+          defaultDefine:
+              defaultDefine == null ? "" : defaultDefine.toStringValue()!));
     }
 
     return rets;
@@ -197,6 +197,14 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
 \''';
     $DBClientSetClass(this.db);
 
+    QueryBuild<Map<String, Object?>> query() {
+      var qb = QueryBuild<Map<String, Object?>>();
+      qb.queryFunc = (String q) async {
+        return await db.rawQuery(q);
+      };
+      return qb;
+    }
+
     Future<void> transaction(Future<void> Function() cb) async {
       var _db = db;
       try {
@@ -247,7 +255,8 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
             // 只需要在卡表加用户id即可
             rets.add('''
   Future<${element.unique ? "" : "List<"}${formatType(element.table)}${element.unique ? (element.required ? "" : "?") : ">"}>query${element.table}${element.unique ? "" : "s"}() async {
-    var rows = clientSet.${element.table}().query("select * from \${${formatClient(element.table)}.table} where ${formatEdgeField(pt.table)} = ? ${element.unique ? "limit 1" : ""}", [$IDField]);
+    var rows = await clientSet.${element.table}().query().where(Eq("${formatEdgeField(pt.table)}", $IDField))${element.unique ? ".limit(1)" : ""}.query();
+
     ${element.unique ? '''
     if(rows.isEmpty) {
       return null;
@@ -264,14 +273,21 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
             // 应在中间表进行查询
             rets.add('''
   Future<${element.unique ? "" : "List<"}${formatType(element.table)}${element.unique ? (element.required ? "" : "?") : ">"}>query${element.table}${element.unique ? "" : "s"}() async {
-    var rows = await clientSet.db.rawQuery("select * from \${${formatClient(element.table)}.table} where id in (select ${formatEdgeField(element.table)} from ${formatEdgeTable(pt.table, element.table)} where ${formatEdgeField(pt.table)} = ? ${element.unique ? "limit 1" : ""})", [$IDField]);
+    var rows = await clientSet.${element.table}().query().where(In("$IDField", [
+        QueryBuild()
+        .select("${formatEdgeField(element.table)}")
+        .table(Table.from("${formatEdgeTable(pt.table, element.table)}"))
+        .where(Eq("${formatEdgeField(pt.table)}", $IDField))
+        ${element.unique ? ".limit(1)" : ""}
+      ])).query();
+
     ${element.unique ? '''
     if(rows.isEmpty) {
       return null;
     }
-    return clientSet.${element.table}().newTypeByRow(rows[0]);
+    return rows[0];
 ''' : '''
-    return rows.map((row) => clientSet.${element.table}().newTypeByRow(row)).toList();
+    return rows;
 '''}
   }
 
@@ -289,7 +305,9 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
             // 一个卡只有一个用户持有
             rets.add('''
   Future<${formatType(element.table)}?>query${element.table}() async {
-    var rows = await clientSet.${element.table}().query("select * from \${${formatClient(element.table)}.table} where $IDField = ? limit 1", [${formatEdgeField(element.table)}]);
+    var rows = await clientSet.${element.table}().query().where(Eq("$IDField", ${formatEdgeField(element.table)}))
+      .limit(1).query();
+
     if(rows.isEmpty) {
       return null;
     }
@@ -305,7 +323,15 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
             // 一个卡多个用户持有
             rets.add('''
   Future<List<${formatType(element.table)}>>query${element.table}() async {
-    var rows = await clientSet.db.rawQuery("select * from \${${formatClient(element.table)}.table} where id in (select ${formatEdgeField(element.table)} from ${formatEdgeTable(element.table, pt.table)} where ${formatEdgeField(pt.table)} = ? limit 1)", [$IDField]);
+    var rows = await clientSet.query()
+      .table(Table.from(${formatClient(element.table)}.table))
+      .where(In("$IDField", [
+        clientSet.query()
+          .table(Table.from("${formatEdgeTable(element.table, pt.table)}"))
+          .select("${formatEdgeField(element.table)}")
+          .where(Eq("${formatEdgeField(pt.table)}", $IDField))
+          .limit(1)
+      ])).query();
     return rows.map((row) => clientSet.${element.table}().newTypeByRow(row)).toList();
   }
   Future<void>set${element.table}s(List<int> ids) async {
@@ -328,10 +354,10 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
   Future<${formatType(pt.table)}>save() async {
     if($IDField == null) {
       ${pt.fields.where((field) => field.defaultDefine.isNotEmpty).map((field) {
-        return '''
+              return '''
       ${field.name} ??= ${field.defaultDefine};
 ''';
-      }).toList().join("\n")}
+            }).toList().join("\n")}
       $IDField = await clientSet.${pt.table}().insert(this);
     }else {
       await clientSet.${pt.table}().update(this);
@@ -480,8 +506,9 @@ ${formatEdgeField(element.table)} INTEGER not null
     return await clientSet.db.rawDelete("delete from \$table where $IDField = ?", [id]);
   }
 
-  Future<${formatType(pt.table)}?>first(int id) async {
-    var rows = await query("select * from \$table where $IDField = ?", [id]);
+  Future<${formatType(pt.table)}?>first(int idx) async {
+    var rows = await query().where(Eq("$IDField", idx)).query();
+
     if(rows.isEmpty) {
       return null;
     }
@@ -489,12 +516,13 @@ ${formatEdgeField(element.table)} INTEGER not null
     return rows[0];
   } 
 
-  Future<${formatType(pt.table)}>firstOrNew(int id) async {
-    var rows = await query("select * from \$table where $IDField = ?", [id]);
+  Future<${formatType(pt.table)}>firstOrNew(int idx) async {
+    var rows = await query().where(Eq("$IDField", idx)).query();
+
     if(rows.isEmpty) {
-      var item =${formatType(pt.table)}();
-      if(id > 0) {
-        item.id = id;
+      var item = ${formatType(pt.table)}();
+      if(idx > 0) {
+        item.id = idx;
       }
       return wrapType(item);
     }
@@ -508,12 +536,17 @@ ${formatEdgeField(element.table)} INTEGER not null
   } 
 
   Future<List<${formatType(pt.table)}>>all() async {
-    return await query("select * from \$table", []);
+    return await query().query();
   }
-  
-  Future<List<${formatType(pt.table)}>>query(String query, [List<Object?>? arguments]) async {
-    return (await clientSet.db.rawQuery(query, arguments))
-      .map((e) => newTypeByRow(e)).toList();
+
+  QueryBuild<${formatType(pt.table)}> query() {
+    var qb = QueryBuild<${formatType(pt.table)}>()..table(Table.from(table));
+    qb.queryFunc = (String q) async {
+      return (await clientSet.db.rawQuery(q))
+        .map((e) => newTypeByRow(e))
+        .toList();
+    };
+    return qb;
   }
 
   Future<int>insert(${formatType(pt.table)} obj) async {
