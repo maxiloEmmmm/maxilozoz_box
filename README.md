@@ -188,6 +188,20 @@ save: (FormData data) async {
         context, "一切都好", () => Navigator.pop(context));
 }
 ```
+```dart
+var rows = await clientSet
+    .query()
+    .table(Table.from(AwardClient.table))
+    .where(In("id", [
+        clientSet
+            .query()
+            .table(Table.from("Award_Plan"))
+            .select("Award_ref")
+            .where(Eq("Plan_ref", id))
+            .limit(1)
+    ]))
+    .query();
+```
 
 ### HTTP
 > 参考 [Dio 3.0.1](https://pub.dev/packages/dio)
