@@ -161,7 +161,7 @@ class In extends Query {
   In(this.s1, this.s2);
 
   String toString() {
-    return "${ident(s1.toString())} in (${s2?.map((e) => e is Query ? e.toString : (e)).toList().join(",")})";
+    return "${ident(s1.toString())} in (${s2?.map((e) => e is Query ? e.toString() : (e)).toList().join(",")})";
   }
 }
 
