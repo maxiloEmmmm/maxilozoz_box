@@ -123,7 +123,7 @@ class QueryBuild<T> extends Query {
     }
 
     if (_limit != null) {
-      build += " limit $_limit, $_offset";
+      build += " limit $_offset, $_limit";
     }
 
     return build;
