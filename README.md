@@ -95,7 +95,7 @@ flutter test test/[*].dart
     }, dev: false);
 ```
 
-### Sqlite(建设中)
+### Sqlite orm
 > gen code 表结构定义
 ```dart
 import "package:maxilozoz_box/modules/storage/sqlite/sqlite.dart";
