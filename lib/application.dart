@@ -16,6 +16,9 @@ class Application {
   late DI di;
   static Application? instance;
   String errorLogKey = '_app_err_log_';
+  BuildContext Function()? getContext;
+
+  AppLifecycleState lifecycleState = AppLifecycleState.resumed;
 
   Application() {
     instance = this;
@@ -25,6 +28,14 @@ class Application {
     serviceProvider.app = this;
 
     this.initBaseProvider();
+  }
+
+  void lifecycleStateChange(AppLifecycleState x) {
+    lifecycleState = x;
+  }
+
+  void setGetContext(BuildContext Function() g) {
+    getContext = g;
   }
 
   void initBaseProvider() {
@@ -77,6 +88,7 @@ class Application {
   }
 
   void run() {
+    WidgetsFlutterBinding.ensureInitialized(); 
     runZonedGuarded(() {
       ErrorWidget.builder = (FlutterErrorDetails details) {
         Zone.current.handleUncaughtError(details.exception, details.stack!);
@@ -94,16 +106,54 @@ class Application {
   }
 }
 
-class _App extends StatelessWidget {
+class _App extends StatefulWidget {
   final Application? app;
 
   _App({this.app});
 
   @override
+  State<_App> createState() => __AppState();
+}
+
+class __AppState extends State<_App> with WidgetsBindingObserver {
+  @override
+  void initState(){
+    WidgetsBinding.instance.addObserver(this);
+    widget.app!.setGetContext(() => context);
+    super.initState();
+  }
+
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.app!.lifecycleStateChange(state);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // 后<前 
+        break;
+      case AppLifecycleState.inactive:
+        // 后>前 
+        break;
+      case AppLifecycleState.paused:
+        // 1. 后<前 2. pause
+        break;
+      case AppLifecycleState.detached:
+        // 退出 上划这种
+        break;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return new MaterialApp(
         initialRoute: '/',
-        onGenerateRoute: this.app!.make('route').generate,
+        onGenerateRoute: widget.app!.make('route').generate,
         theme: ThemeData(
           primarySwatch: Colors.green,
           backgroundColor: Colors.grey,
