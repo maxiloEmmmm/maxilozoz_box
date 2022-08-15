@@ -5,6 +5,8 @@ import './404.dart';
 class MinRoute {
   List routes = [];
 
+  static BuildContext? routeContext;
+
   RouteMiddleware routeMiddleware = RouteMiddleware();
 
   MinRouteGroupModel group =
@@ -33,7 +35,10 @@ class MinRoute {
         }
 
         return MaterialPageRoute(
-            builder: (BuildContext _) => widget!, settings: settings);
+            builder: (BuildContext context) {
+              routeContext = context;
+              return widget!;
+            }, settings: settings);
       } else {
         settings = _settings;
       }
@@ -49,7 +54,10 @@ class MinRoute {
           //widgetBuilder = (BuildContext _) => I404Page();
         }
     }
-    return MaterialPageRoute(builder: widgetBuilder, settings: settings);
+    return MaterialPageRoute(builder: (BuildContext context) {
+      routeContext = context;
+      return widgetBuilder(context);
+    }, settings: settings);
   }
 
   bool addGroup(List middlewares, String pre, Function make) {
