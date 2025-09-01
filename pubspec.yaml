@@ -1,13 +1,13 @@
 name: maxilozoz_box
 description: flutter framework.
-version: 0.0.2-beta2
+version: 0.0.3-beta0
 homepage: https://github.com/maxiloEmmmm/maxilozoz_box
 
 environment:
-  sdk: '>=2.13.0 <3.0.0'
+  sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
-  analyzer: ^4.2.0
+  analyzer: ^6.3.2
   build: ^2.3.0
   path: ^1.8.1
   flutter:
@@ -17,7 +17,6 @@ dependencies:
   shared_preferences: ^2.0.15
   dio: ^4.0.6
   sqflite: ^2.0.3
-  json_annotation: ^4.4.0
   source_gen: ^1.2.2
 
 dev_dependencies:

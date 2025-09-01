@@ -50,7 +50,7 @@ class TestMiddleware {
     // auth is false, to auth
     bool auth = false;
     if (!auth) {
-      item.settings = settings.copyWith(name: '/auth/login');
+      item.settings = RouteSettings(name: '/auth/login');
       item.ok = false;
     }
     return item;

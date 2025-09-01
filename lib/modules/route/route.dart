@@ -17,7 +17,7 @@ class MinRoute {
 
     if (route != null) {
       RouteSettings _settings =
-          routeMiddleware.filter(settings.copyWith(), route.middlewares)!;
+          routeMiddleware.filter(settings, route.middlewares)!;
 
       if (_settings.name == settings.name) {
         Widget? widget;
@@ -38,7 +38,8 @@ class MinRoute {
             builder: (BuildContext context) {
               routeContext = context;
               return widget!;
-            }, settings: settings);
+            },
+            settings: settings);
       } else {
         settings = _settings;
       }
@@ -54,10 +55,12 @@ class MinRoute {
           //widgetBuilder = (BuildContext _) => I404Page();
         }
     }
-    return MaterialPageRoute(builder: (BuildContext context) {
-      routeContext = context;
-      return widgetBuilder(context);
-    }, settings: settings);
+    return MaterialPageRoute(
+        builder: (BuildContext context) {
+          routeContext = context;
+          return widgetBuilder(context);
+        },
+        settings: settings);
   }
 
   bool addGroup(List middlewares, String pre, Function make) {
@@ -109,7 +112,7 @@ class MinRoute {
     }
 
     this.routes.add(MinRouteItem(
-        path: path.replaceAll(new RegExp(':[^/]+'), '([a-zA-Z0-9_]+)'),
+        path: path.replaceAll(new RegExp(':[^/]+'), '([a-zA-Z0-9_-]+)'),
         handler: make,
         matches: matches,
         hasParam: (new RegExp('/:')).hasMatch(path),
@@ -136,7 +139,9 @@ class MinRoute {
         for (int j = 0; j < mLen; j++) {
           Match match = matches[j];
 
-          if (match.groupCount == 2 &&  match.group(1) != null && match.group(1)!.startsWith(':')) {
+          if (match.groupCount == 2 &&
+              match.group(1) != null &&
+              match.group(1)!.startsWith(':')) {
             String k = match.group(1)!.substring(1);
             params[k] = paramMatches[0].group(basic++);
           }

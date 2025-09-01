@@ -7,11 +7,12 @@ class DI {
 
   DI({this.app});
 
-  void bind(String key, Function(DI app, dynamic params) instance, {bool share = true}) {
+  void bind(String key, Function(DI app, dynamic params) instance,
+      {bool share = true}) {
     this._binds[key] = new Bind(key: key, instance: instance, share: share);
   }
 
-  dynamic make(String key, {dynamic params, force: false}) {
+  dynamic make(String key, {dynamic params, force = false}) {
     return this._binds[key].make(this, params, force: force);
   }
 }
@@ -27,8 +28,8 @@ class Bind {
 
   Bind({this.key, this.instance, this.share});
 
-  dynamic make(DI app, dynamic params, {force: false}){
-    if(this.share! && this._instance != null && !force) {
+  dynamic make(DI app, dynamic params, {force = false}) {
+    if (this.share! && this._instance != null && !force) {
       return this._instance;
     }
 

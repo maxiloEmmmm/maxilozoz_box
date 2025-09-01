@@ -54,7 +54,7 @@ class Application {
     this.di.make('route').routeMiddleware.add(k, v);
   }
 
-  dynamic make(String key, {params, force: false}) {
+  dynamic make(String key, {params, force = false}) {
     return this.di.make(key, force: force, params: params);
   }
 
@@ -65,7 +65,7 @@ class Application {
     }, share: share);
   }
 
-  dynamic config(dynamic model, {dev: false}) {
+  dynamic config(dynamic model, {dev = false}) {
     if (model is String) {
       return this.di.make('config').get(model);
     } else {
@@ -78,7 +78,7 @@ class Application {
     }
   }
 
-  dynamic log({String key: '', String logStr: '', int limit: 200}) {
+  dynamic log({String key = '', String logStr = '', int limit = 200}) {
     key = key.isEmpty ? this.errorLogKey : key;
     if (logStr.isEmpty) {
       return this.di.make('log').get(key);
@@ -88,7 +88,7 @@ class Application {
   }
 
   void run() {
-    WidgetsFlutterBinding.ensureInitialized(); 
+    WidgetsFlutterBinding.ensureInitialized();
     runZonedGuarded(() {
       ErrorWidget.builder = (FlutterErrorDetails details) {
         Zone.current.handleUncaughtError(details.exception, details.stack!);
@@ -117,12 +117,11 @@ class _App extends StatefulWidget {
 
 class __AppState extends State<_App> with WidgetsBindingObserver {
   @override
-  void initState(){
+  void initState() {
     WidgetsBinding.instance.addObserver(this);
     widget.app!.setGetContext(() => context);
     super.initState();
   }
-
 
   @override
   void dispose() {
@@ -135,16 +134,18 @@ class __AppState extends State<_App> with WidgetsBindingObserver {
     widget.app!.lifecycleStateChange(state);
     switch (state) {
       case AppLifecycleState.resumed:
-        // 后<前 
+        // 后<前
         break;
       case AppLifecycleState.inactive:
-        // 后>前 
+        // 后>前
         break;
       case AppLifecycleState.paused:
         // 1. 后<前 2. pause
         break;
       case AppLifecycleState.detached:
         // 退出 上划这种
+        break;
+      case AppLifecycleState.hidden:
         break;
     }
   }

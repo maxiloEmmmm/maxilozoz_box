@@ -10,13 +10,13 @@ class ServiceProvider {
   ServiceProvider({this.app});
 
   void register(dynamic provider) {
-    if(this.providers.containsKey(provider.name)) {
+    if (this.providers.containsKey(provider.name)) {
       print('[warn]maxilozoz box: provider register exist: ' + provider.name);
-      return ;
+      return;
     }
 
     this.providers[provider.name] = provider;
-    
+
     provider.register(this.app);
 
     if (this.booted) {
@@ -24,8 +24,10 @@ class ServiceProvider {
     }
   }
 
-  void run(){
-    if(this.booted) {return ;}
+  void run() {
+    if (this.booted) {
+      return;
+    }
 
     this.providers.forEach((k, v) => v.boot(this.app));
 

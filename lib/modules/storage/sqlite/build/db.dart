@@ -20,7 +20,7 @@ String formatEdgeField(String prefix) {
 }
 
 String formatEdgeTable(String main, edge) {
-  return "$main\_$edge";
+  return "`$main\_$edge`";
 }
 
 class parseTable {
@@ -28,6 +28,8 @@ class parseTable {
   List<DBMetaEdge> edges = [];
   List<DBMetaIndex> indexs = [];
   String table = "";
+  late DBFieldType idType;
+  late ConstantReader cr;
 
   Map<String, DBMetaEdge> get edgeMap {
     Map<String, DBMetaEdge> ret = {};
@@ -45,7 +47,7 @@ class parseTable {
           .map((e) {
         return DBMetaField(
             name: formatEdgeField(e.table),
-            type: DBFieldType.Int,
+            type: e.refType,
             required: e.required);
       }).toList()
     ];
@@ -72,15 +74,21 @@ class DBGenerator extends Generator {
   TypeChecker get typeChecker => TypeChecker.fromRuntime(DBSchema);
   var pp = parse();
 
-  List<DBMetaField> doParseField(ConstantReader ann) {
+  List<DBMetaField> doParseField(ConstantReader ann, parseTable p) {
     var iterator = ann.read("fields").listValue.iterator;
-
+    var t = DBFieldType.Int;
+    var rt = ann.read("idType");
+    if (!rt.isNull) {
+      t = DBFieldType.values[
+          ann.read("idType").objectValue.getField("index")!.toIntValue()!];
+    }
+    p.idType = t;
     List<DBMetaField> rets = [
       DBMetaField(
         name: IDField,
         pk: true,
         autoIncrement: true,
-        type: DBFieldType.Int,
+        type: t,
       )
     ];
     while (iterator.moveNext()) {
@@ -105,7 +113,8 @@ class DBGenerator extends Generator {
     return rets;
   }
 
-  List<DBMetaEdge> doParseEdge(ConstantReader ann) {
+  List<DBMetaEdge> doParseEdge(
+      ConstantReader ann, parseTable table, List<parseTable> tables) {
     var edgesField = ann.read("edges");
     if (edgesField.isNull) {
       return [];
@@ -113,8 +122,12 @@ class DBGenerator extends Generator {
     var iterator = edgesField.listValue.iterator;
     List<DBMetaEdge> rets = [];
     while (iterator.moveNext()) {
+      var tableName = iterator.current.getField("table")!.toStringValue()!;
       rets.add(DBMetaEdge(
-        table: iterator.current.getField("table")!.toStringValue()!,
+        table: tableName,
+        fieldType: table.idType,
+        refType:
+            tables.firstWhere((element) => element.table == tableName).idType,
         type: DBEdgeType.values[iterator.current
             .getField("type")!
             .getField("index")!
@@ -147,9 +160,9 @@ class DBGenerator extends Generator {
 
   parseTable doParseTable(String table, ConstantReader ann) {
     var p = parseTable();
-    p.table = table;
-    p.fields = doParseField(ann);
-    p.edges = doParseEdge(ann);
+    p.table = table; // 防止保留关键字
+    p.cr = ann;
+    p.fields = doParseField(ann, p);
     // todo support index
     return p;
   }
@@ -165,6 +178,10 @@ class DBGenerator extends Generator {
           (annotatedElement.element as e.ClassElement).name,
           annotatedElement.annotation));
     }
+
+    pp.tables.forEach((element) {
+      element.edges = doParseEdge(element.cr, element, pp.tables);
+    });
 
     if (pp.tables.isEmpty) {
       return "";
@@ -183,6 +200,7 @@ class DBGenerator extends Generator {
   static const DBClientSetClass = "DBClientSet";
   String renderUtil() {
     return '''
+  var stringKeyGeneral = const Uuid().v4;
   class $DBClientSetClass {
     ${pp.tables.map((table) {
               return '''
@@ -291,7 +309,7 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
 '''}
   }
 
-  Future<void>set${element.table}${element.unique ? "" : "s"}(${!element.unique ? "List<int> ids" : "int idx"}) async {
+  Future<void>set${element.table}${element.unique ? "" : "s"}(${!element.unique ? "List<${DBFieldTypeDartTransform[element.refType]}> ids" : "${DBFieldTypeDartTransform[element.refType]} idx"}) async {
     var it = ${element.unique ? "[idx]" : "ids"}.iterator;
     while(it.moveNext()) {
       await clientSet.db.rawInsert("insert into ${formatEdgeTable(pt.table, element.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, it.current]);
@@ -314,7 +332,7 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
     return rows[0];
   }
 
-  ${formatType(pt.table)} set${element.table}(int idx) {
+  ${formatType(pt.table)} set${element.table}(${DBFieldTypeDartTransform[element.refType]} idx) {
     ${formatEdgeField(element.table)} = idx;
     return this;
   }
@@ -334,11 +352,11 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
       ])).query();
     return rows.map((row) => clientSet.${element.table}().newTypeByRow(row)).toList();
   }
-  Future<void>set${element.table}s(List<int> ids) async {
+  Future<void>set${element.table}s(List<${DBFieldTypeDartTransform[element.refType]}> ids) async {
     await clientSet.db.rawDelete("delete from ${formatEdgeTable(element.table, pt.table)} where ${formatEdgeField(pt.table)} = ?", [$IDField]);
     var it = ids.iterator;
     while(it.moveNext()) {
-      await clientSet.db.rawInsert("insert into ${formatEdgeTable(element.table, pt.table)}(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, it.current]);
+      await clientSet.db.rawInsert("insert into ${formatEdgeTable(element.table, pt.table)})(${formatEdgeField(pt.table)}, ${formatEdgeField(element.table)}) values(?, ?)", [$IDField, it.current]);
     }
     return;
   }
@@ -358,7 +376,10 @@ ${pp.tables.map((e) => "\${${formatClient(e.table)}.schema}").toList().join("\n"
       ${field.name} ??= ${field.defaultDefine};
 ''';
             }).toList().join("\n")}
-      $IDField = await clientSet.${pt.table}().insert(this);
+      ${pt.idType == DBFieldType.Int ? "$IDField = await clientSet.${pt.table}().insert(this);" : '''
+  $IDField = stringKeyGeneral();
+  await clientSet.${pt.table}().insert(this);
+'''}
     }else {
       await clientSet.${pt.table}().update(this);
     }
@@ -491,9 +512,9 @@ class ${formatClient(pt.table)} {
       }
 
       ret.add('''
-create table if not exists ${formatEdgeTable(element.table, pt.table)} (
-${formatEdgeField(pt.table)} INTEGER not null,
-${formatEdgeField(element.table)} INTEGER not null
+create table if not exists `${formatEdgeTable(element.table, pt.table)}` (
+${formatEdgeField(pt.table)} ${DBFieldTypeDartTransform[element.fieldType]} not null,
+${formatEdgeField(element.table)} ${DBFieldTypeDartTransform[element.refType]} not null
 );
 ''');
     });
@@ -502,11 +523,11 @@ ${formatEdgeField(element.table)} INTEGER not null
 
   String renderClientFunc(parseTable pt) {
     return '''
-  Future<int>delete(int id) async {
-    return await clientSet.db.rawDelete("delete from \$table where $IDField = ?", [id]);
+  Future<int>delete(${DBFieldTypeDartTransform[pt.idType]} id) async {
+    return await clientSet.db.rawDelete("delete from \${Table.from(table)} where $IDField = ?", [id]);
   }
 
-  Future<${formatType(pt.table)}?>first(int idx) async {
+  Future<${formatType(pt.table)}?>first(${DBFieldTypeDartTransform[pt.idType]} idx) async {
     var rows = await query().where(Eq("$IDField", idx)).query();
 
     if(rows.isEmpty) {
@@ -516,12 +537,12 @@ ${formatEdgeField(element.table)} INTEGER not null
     return rows[0];
   } 
 
-  Future<${formatType(pt.table)}>firstOrNew(int idx) async {
+  Future<${formatType(pt.table)}>firstOrNew({${DBFieldTypeDartTransform[pt.idType]}? idx}) async {
     var rows = await query().where(Eq("$IDField", idx)).query();
 
     if(rows.isEmpty) {
       var item = ${formatType(pt.table)}();
-      if(idx > 0) {
+      if(idx != null) {
         item.id = idx;
       }
       return wrapType(item);
@@ -570,7 +591,7 @@ ${formatEdgeField(element.table)} INTEGER not null
   String renderClientSchema(parseTable pt) {
     String fields = pt.typeFields
         .map((field) =>
-            "${field.name} ${DBFieldTypeTransform[field.type]} ${field.pk ? "PRIMARY KEY" : ""} ${field.autoIncrement ? "AUTOINCREMENT" : ""} ${field.required ? "not null" : ""}")
+            "${field.name} ${DBFieldTypeTransform[field.type]} ${field.pk ? "PRIMARY KEY" : ""} ${field.autoIncrement && pt.idType == DBFieldType.Int ? "AUTOINCREMENT" : ""} ${field.required ? "not null" : ""}")
         .toList()
         .join(",\n");
 
@@ -580,7 +601,7 @@ ${pt.typeFields.map((e) => '''
   static const ${e.name}Field="${e.name}";''').toList().join("\n")}
 static const table = "${pt.table}";
 static const schema = \'''
-create table if not exists ${pt.table} (
+create table if not exists `${pt.table}` (
   $fields
 );
 ${renderClientEdgeSchema(pt)}

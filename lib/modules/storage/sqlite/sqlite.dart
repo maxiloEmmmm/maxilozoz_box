@@ -2,7 +2,25 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart' as sqliteSDk;
 
 typedef Database = sqliteSDk.Database;
-typedef DatabaseExec = sqliteSDk.DatabaseExecutor;
+typedef DatabaseExec = ext;
+const logSep = "_##_sep_##_";
+
+class ext {
+  sqliteSDk.DatabaseExecutor db;
+  Function(String)? watch;
+  ext(this.db, {this.watch});
+
+  @override
+  sqliteSDk.Batch batch() {
+    return db.batch();
+  }
+
+  void log(String sql) {
+    if (watch != null) {
+      watch!(sql);
+    }
+  }
+}
 
 class sqlite {
   String path = "";
@@ -19,7 +37,7 @@ class sqlite {
   static const CompleteStatus = 1;
   static const WaitStatus = 0;
   String migrateTableSchema = '''
-create table $migrateTableName(
+create table if not exists $migrateTableName(
   $versionField INTEGER,
   $sqlField TEXT,
   $statusField INTEGER
@@ -29,14 +47,22 @@ create table $migrateTableName(
   Future<Database?> DB() async {
     if (instance == null) {
       try {
-        var db = await sqliteSDk.openDatabase(path, version: 1,
-            onCreate: (db, version) async {
-          for (var val in schema.split(";")..add(migrateTableSchema)) {
-            if (val.trim().isNotEmpty) {
-              await db.execute(val);
+        var db = await sqliteSDk.openDatabase(
+          path,
+          version: 1,
+          onOpen: (db) async {
+            if (migrateTableSchema.isNotEmpty) {
+              await db.execute(migrateTableSchema);
             }
-          }
-        });
+          },
+          onConfigure: (db) async {
+            for (var val in schema.split(";")) {
+              if (val.trim().isNotEmpty) {
+                await db.execute(val);
+              }
+            }
+          },
+        );
 
         if (migrate != null && migrate is List<String>) {
           List<String> m = migrate as List<String>;

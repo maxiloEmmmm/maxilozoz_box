@@ -5,6 +5,7 @@ enum DBFieldType {
   Int,
   DateTime,
   Bool,
+  Double,
 }
 
 Map<DBFieldType, String> DBFieldTypeTransform = {
@@ -12,6 +13,7 @@ Map<DBFieldType, String> DBFieldTypeTransform = {
   DBFieldType.Int: "INTEGER",
   DBFieldType.DateTime: "text",
   DBFieldType.Bool: "text",
+  DBFieldType.Double: "real",
 };
 
 Map<DBFieldType, String> DBFieldTypeDartTransform = {
@@ -19,6 +21,7 @@ Map<DBFieldType, String> DBFieldTypeDartTransform = {
   DBFieldType.Int: "int",
   DBFieldType.DateTime: "DateTime",
   DBFieldType.Bool: "bool",
+  DBFieldType.Double: "double"
 };
 
 const IDField = "id";
@@ -48,14 +51,18 @@ class DBMetaEdge {
   final String table;
   final bool unique;
   final String ref;
+  final DBFieldType refType;
   final String field;
+  final DBFieldType fieldType;
   final bool required;
   const DBMetaEdge({
     required this.table,
     required this.type,
     this.unique = false,
     this.field = IDField,
+    this.fieldType = DBFieldType.Int,
     this.ref = IDField,
+    this.refType = DBFieldType.Int,
     this.required = false,
   });
 }
@@ -63,11 +70,13 @@ class DBMetaEdge {
 class DBMetaIndex {}
 
 class DBSchema {
+  final DBFieldType idType;
   final List<DBMetaField> fields;
   final List<DBMetaEdge>? edges;
   final List<DBMetaIndex>? indexs;
   const DBSchema({
     required this.fields,
+    this.idType = DBFieldType.Int,
     this.edges,
     this.indexs,
   });
