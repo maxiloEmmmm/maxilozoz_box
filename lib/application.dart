@@ -51,7 +51,7 @@ class Application {
   }
 
   void routeMiddleware(String k, dynamic v) {
-    this.di.make('route1').routeMiddleware.add(k, v);
+    this.di.make('route').routeMiddleware.add(k, v);
   }
 
   dynamic make(String key, {params, force = false}) {
