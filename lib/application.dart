@@ -157,7 +157,7 @@ class __AppState extends State<_App> with WidgetsBindingObserver {
         onGenerateRoute: widget.app!.make('route').generate,
         theme: ThemeData(
           primarySwatch: Colors.green,
-          backgroundColor: Colors.grey,
+          scaffoldBackgroundColor: Colors.grey,
         ));
   }
 }
